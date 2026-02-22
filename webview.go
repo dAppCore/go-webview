@@ -25,6 +25,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 )
@@ -421,14 +422,14 @@ func (wv *Webview) handleConsoleEvent(params map[string]any) {
 
 	// Extract args
 	args, _ := params["args"].([]any)
-	var text string
+	var text strings.Builder
 	for i, arg := range args {
 		if argMap, ok := arg.(map[string]any); ok {
 			if val, ok := argMap["value"]; ok {
 				if i > 0 {
-					text += " "
+					text.WriteString(" ")
 				}
-				text += fmt.Sprint(val)
+				text.WriteString(fmt.Sprint(val))
 			}
 		}
 	}
@@ -449,7 +450,7 @@ func (wv *Webview) handleConsoleEvent(params map[string]any) {
 
 	wv.addConsoleMessage(ConsoleMessage{
 		Type:      msgType,
-		Text:      text,
+		Text:      text.String(),
 		Timestamp: time.Now(),
 		URL:       url,
 		Line:      line,

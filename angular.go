@@ -3,6 +3,7 @@ package webview
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -382,12 +383,12 @@ func (ah *AngularHelper) CallComponentMethod(selector, methodName string, args .
 	ctx, cancel := context.WithTimeout(ah.wv.ctx, ah.timeout)
 	defer cancel()
 
-	argsStr := ""
+	var argsStr strings.Builder
 	for i, arg := range args {
 		if i > 0 {
-			argsStr += ", "
+			argsStr.WriteString(", ")
 		}
-		argsStr += formatJSValue(arg)
+		argsStr.WriteString(formatJSValue(arg))
 	}
 
 	script := fmt.Sprintf(`
@@ -413,7 +414,7 @@ func (ah *AngularHelper) CallComponentMethod(selector, methodName string, args .
 			}
 			return result;
 		})()
-	`, selector, selector, methodName, methodName, methodName, argsStr)
+	`, selector, selector, methodName, methodName, methodName, argsStr.String())
 
 	return ah.wv.evaluate(ctx, script)
 }

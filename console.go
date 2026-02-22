@@ -3,6 +3,7 @@ package webview
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 )
@@ -221,14 +222,14 @@ func (cw *ConsoleWatcher) handleConsoleEvent(params map[string]any) {
 
 	// Extract args
 	args, _ := params["args"].([]any)
-	var text string
+	var text strings.Builder
 	for i, arg := range args {
 		if argMap, ok := arg.(map[string]any); ok {
 			if val, ok := argMap["value"]; ok {
 				if i > 0 {
-					text += " "
+					text.WriteString(" ")
 				}
-				text += fmt.Sprint(val)
+				text.WriteString(fmt.Sprint(val))
 			}
 		}
 	}
@@ -249,7 +250,7 @@ func (cw *ConsoleWatcher) handleConsoleEvent(params map[string]any) {
 
 	msg := ConsoleMessage{
 		Type:      msgType,
-		Text:      text,
+		Text:      text.String(),
 		Timestamp: time.Now(),
 		URL:       url,
 		Line:      line,
@@ -442,7 +443,7 @@ func (ew *ExceptionWatcher) handleException(params map[string]any) {
 	url, _ := exceptionDetails["url"].(string)
 
 	// Extract stack trace
-	var stackTrace string
+	var stackTrace strings.Builder
 	if st, ok := exceptionDetails["stackTrace"].(map[string]any); ok {
 		if frames, ok := st["callFrames"].([]any); ok {
 			for _, f := range frames {
@@ -451,7 +452,7 @@ func (ew *ExceptionWatcher) handleException(params map[string]any) {
 					frameURL, _ := frame["url"].(string)
 					frameLine, _ := frame["lineNumber"].(float64)
 					frameCol, _ := frame["columnNumber"].(float64)
-					stackTrace += fmt.Sprintf("  at %s (%s:%d:%d)\n", funcName, frameURL, int(frameLine), int(frameCol))
+					stackTrace.WriteString(fmt.Sprintf("  at %s (%s:%d:%d)\n", funcName, frameURL, int(frameLine), int(frameCol)))
 				}
 			}
 		}
@@ -469,7 +470,7 @@ func (ew *ExceptionWatcher) handleException(params map[string]any) {
 		LineNumber:   int(lineNum),
 		ColumnNumber: int(colNum),
 		URL:          url,
-		StackTrace:   stackTrace,
+		StackTrace:   stackTrace.String(),
 		Timestamp:    time.Now(),
 	}
 
@@ -487,7 +488,7 @@ func (ew *ExceptionWatcher) handleException(params map[string]any) {
 
 // FormatConsoleOutput formats console messages for display.
 func FormatConsoleOutput(messages []ConsoleMessage) string {
-	var output string
+	var output strings.Builder
 	for _, msg := range messages {
 		prefix := ""
 		switch msg.Type {
@@ -503,7 +504,7 @@ func FormatConsoleOutput(messages []ConsoleMessage) string {
 			prefix = "[LOG]"
 		}
 		timestamp := msg.Timestamp.Format("15:04:05.000")
-		output += fmt.Sprintf("%s %s %s\n", timestamp, prefix, msg.Text)
+		output.WriteString(fmt.Sprintf("%s %s %s\n", timestamp, prefix, msg.Text))
 	}
-	return output
+	return output.String()
 }

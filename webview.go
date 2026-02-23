@@ -25,6 +25,8 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"iter"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -192,14 +194,42 @@ func (wv *Webview) QuerySelectorAll(selector string) ([]*ElementInfo, error) {
 	return wv.querySelectorAll(ctx, selector)
 }
 
+// QuerySelectorAllAll returns an iterator over all elements matching the selector.
+func (wv *Webview) QuerySelectorAllAll(selector string) iter.Seq[*ElementInfo] {
+	return func(yield func(*ElementInfo) bool) {
+		ctx, cancel := context.WithTimeout(wv.ctx, wv.timeout)
+		defer cancel()
+
+		elements, err := wv.querySelectorAll(ctx, selector)
+		if err != nil {
+			return
+		}
+
+		for _, elem := range elements {
+			if !yield(elem) {
+				return
+			}
+		}
+	}
+}
+
 // GetConsole returns captured console messages.
 func (wv *Webview) GetConsole() []ConsoleMessage {
-	wv.mu.RLock()
-	defer wv.mu.RUnlock()
+	return slices.Collect(wv.GetConsoleAll())
+}
 
-	result := make([]ConsoleMessage, len(wv.consoleLogs))
-	copy(result, wv.consoleLogs)
-	return result
+// GetConsoleAll returns an iterator over captured console messages.
+func (wv *Webview) GetConsoleAll() iter.Seq[ConsoleMessage] {
+	return func(yield func(ConsoleMessage) bool) {
+		wv.mu.RLock()
+		defer wv.mu.RUnlock()
+
+		for _, msg := range wv.consoleLogs {
+			if !yield(msg) {
+				return
+			}
+		}
+	}
 }
 
 // ClearConsole clears captured console messages.

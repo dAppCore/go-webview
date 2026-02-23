@@ -3,6 +3,8 @@ package webview
 import (
 	"context"
 	"fmt"
+	"iter"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -75,60 +77,84 @@ func (cw *ConsoleWatcher) SetLimit(limit int) {
 
 // Messages returns all captured messages.
 func (cw *ConsoleWatcher) Messages() []ConsoleMessage {
-	cw.mu.RLock()
-	defer cw.mu.RUnlock()
+	return slices.Collect(cw.MessagesAll())
+}
 
-	result := make([]ConsoleMessage, len(cw.messages))
-	copy(result, cw.messages)
-	return result
+// MessagesAll returns an iterator over all captured messages.
+func (cw *ConsoleWatcher) MessagesAll() iter.Seq[ConsoleMessage] {
+	return func(yield func(ConsoleMessage) bool) {
+		cw.mu.RLock()
+		defer cw.mu.RUnlock()
+
+		for _, msg := range cw.messages {
+			if !yield(msg) {
+				return
+			}
+		}
+	}
 }
 
 // FilteredMessages returns messages matching the current filters.
 func (cw *ConsoleWatcher) FilteredMessages() []ConsoleMessage {
-	cw.mu.RLock()
-	defer cw.mu.RUnlock()
+	return slices.Collect(cw.FilteredMessagesAll())
+}
 
-	if len(cw.filters) == 0 {
-		result := make([]ConsoleMessage, len(cw.messages))
-		copy(result, cw.messages)
-		return result
-	}
+// FilteredMessagesAll returns an iterator over messages matching the current filters.
+func (cw *ConsoleWatcher) FilteredMessagesAll() iter.Seq[ConsoleMessage] {
+	return func(yield func(ConsoleMessage) bool) {
+		cw.mu.RLock()
+		defer cw.mu.RUnlock()
 
-	result := make([]ConsoleMessage, 0)
-	for _, msg := range cw.messages {
-		if cw.matchesFilter(msg) {
-			result = append(result, msg)
+		for _, msg := range cw.messages {
+			if cw.matchesFilter(msg) {
+				if !yield(msg) {
+					return
+				}
+			}
 		}
 	}
-	return result
 }
 
 // Errors returns all error messages.
 func (cw *ConsoleWatcher) Errors() []ConsoleMessage {
-	cw.mu.RLock()
-	defer cw.mu.RUnlock()
+	return slices.Collect(cw.ErrorsAll())
+}
 
-	result := make([]ConsoleMessage, 0)
-	for _, msg := range cw.messages {
-		if msg.Type == "error" {
-			result = append(result, msg)
+// ErrorsAll returns an iterator over all error messages.
+func (cw *ConsoleWatcher) ErrorsAll() iter.Seq[ConsoleMessage] {
+	return func(yield func(ConsoleMessage) bool) {
+		cw.mu.RLock()
+		defer cw.mu.RUnlock()
+
+		for _, msg := range cw.messages {
+			if msg.Type == "error" {
+				if !yield(msg) {
+					return
+				}
+			}
 		}
 	}
-	return result
 }
 
 // Warnings returns all warning messages.
 func (cw *ConsoleWatcher) Warnings() []ConsoleMessage {
-	cw.mu.RLock()
-	defer cw.mu.RUnlock()
+	return slices.Collect(cw.WarningsAll())
+}
 
-	result := make([]ConsoleMessage, 0)
-	for _, msg := range cw.messages {
-		if msg.Type == "warning" {
-			result = append(result, msg)
+// WarningsAll returns an iterator over all warning messages.
+func (cw *ConsoleWatcher) WarningsAll() iter.Seq[ConsoleMessage] {
+	return func(yield func(ConsoleMessage) bool) {
+		cw.mu.RLock()
+		defer cw.mu.RUnlock()
+
+		for _, msg := range cw.messages {
+			if msg.Type == "warning" {
+				if !yield(msg) {
+					return
+				}
+			}
 		}
 	}
-	return result
 }
 
 // Clear clears all captured messages.
@@ -271,8 +297,7 @@ func (cw *ConsoleWatcher) addMessage(msg ConsoleMessage) {
 	cw.messages = append(cw.messages, msg)
 
 	// Copy handlers to call outside lock
-	handlers := make([]ConsoleHandler, len(cw.handlers))
-	copy(handlers, cw.handlers)
+	handlers := slices.Clone(cw.handlers)
 	cw.mu.Unlock()
 
 	// Call handlers
@@ -315,7 +340,7 @@ func containsString(s, substr string) bool {
 
 // findString finds substr in s, returns -1 if not found.
 func findString(s, substr string) int {
-	for i := 0; i <= len(s)-len(substr); i++ {
+	for i := range len(s) - len(substr) + 1 {
 		if s[i:i+len(substr)] == substr {
 			return i
 		}
@@ -359,12 +384,21 @@ func NewExceptionWatcher(wv *Webview) *ExceptionWatcher {
 
 // Exceptions returns all captured exceptions.
 func (ew *ExceptionWatcher) Exceptions() []ExceptionInfo {
-	ew.mu.RLock()
-	defer ew.mu.RUnlock()
+	return slices.Collect(ew.ExceptionsAll())
+}
 
-	result := make([]ExceptionInfo, len(ew.exceptions))
-	copy(result, ew.exceptions)
-	return result
+// ExceptionsAll returns an iterator over all captured exceptions.
+func (ew *ExceptionWatcher) ExceptionsAll() iter.Seq[ExceptionInfo] {
+	return func(yield func(ExceptionInfo) bool) {
+		ew.mu.RLock()
+		defer ew.mu.RUnlock()
+
+		for _, exc := range ew.exceptions {
+			if !yield(exc) {
+				return
+			}
+		}
+	}
 }
 
 // Clear clears all captured exceptions.
@@ -476,8 +510,7 @@ func (ew *ExceptionWatcher) handleException(params map[string]any) {
 
 	ew.mu.Lock()
 	ew.exceptions = append(ew.exceptions, info)
-	handlers := make([]func(ExceptionInfo), len(ew.handlers))
-	copy(handlers, ew.handlers)
+	handlers := slices.Clone(ew.handlers)
 	ew.mu.Unlock()
 
 	// Call handlers

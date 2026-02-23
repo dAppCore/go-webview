@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"iter"
 	"net/http"
+	"slices"
 	"sync"
 	"sync/atomic"
 
@@ -251,7 +253,7 @@ func (c *CDPClient) readLoop() {
 // dispatchEvent dispatches an event to registered handlers.
 func (c *CDPClient) dispatchEvent(method string, params map[string]any) {
 	c.handMu.RLock()
-	handlers := c.handlers[method]
+	handlers := slices.Clone(c.handlers[method])
 	c.handMu.RUnlock()
 
 	for _, handler := range handlers {
@@ -363,6 +365,21 @@ func ListTargets(debugURL string) ([]targetInfo, error) {
 	}
 
 	return targets, nil
+}
+
+// ListTargetsAll returns an iterator over all available targets.
+func ListTargetsAll(debugURL string) iter.Seq[targetInfo] {
+	return func(yield func(targetInfo) bool) {
+		targets, err := ListTargets(debugURL)
+		if err != nil {
+			return
+		}
+		for _, t := range targets {
+			if !yield(t) {
+				return
+			}
+		}
+	}
 }
 
 // GetVersion returns Chrome version information.

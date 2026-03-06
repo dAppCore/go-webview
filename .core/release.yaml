@@ -1,0 +1,20 @@
+version: 1
+
+project:
+  name: go-webview
+  repository: core/go-webview
+
+publishers: []
+
+changelog:
+  include:
+    - feat
+    - fix
+    - perf
+    - refactor
+  exclude:
+    - chore
+    - docs
+    - style
+    - test
+    - ci

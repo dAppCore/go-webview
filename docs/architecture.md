@@ -1,45 +1,46 @@
+---
+title: Architecture
+description: Internals of go-webview -- CDP connection, message protocol, DOM queries, console capture, action system, and Angular helpers.
+---
+
 # Architecture
 
-Module: `forge.lthn.ai/core/go-webview`
+This document describes how `go-webview` works internally. It covers the CDP connection lifecycle, message protocol, DOM query mechanics, input simulation, console capture, the action system, Angular helpers, and thread safety.
 
-## Overview
+## High-Level Data Flow
 
-go-webview is a Chrome DevTools Protocol (CDP) client for browser automation, testing, and scraping. It provides a high-level Go API over the low-level CDP WebSocket protocol, connecting to an externally managed Chrome or Chromium instance running with the remote debugging port enabled.
+```
+Application Code
+      |
+      v
+  Webview  (high-level API: Navigate, Click, Type, Screenshot, ...)
+      |
+      v
+  CDPClient  (WebSocket transport, message framing, event dispatch)
+      |
+      v
+  Chrome / Chromium  (running with --remote-debugging-port=9222)
+```
 
-The package does not launch Chrome itself. The caller is responsible for starting a Chrome process with `--remote-debugging-port=9222` before constructing a `Webview`.
-
----
-
-## Package Structure
-
-| File | Responsibility |
-|------|---------------|
-| `webview.go` | `Webview` struct, public API, navigation, DOM, screenshot, JS evaluation |
-| `cdp.go` | `CDPClient` — WebSocket transport, message framing, event dispatch |
-| `actions.go` | `Action` interface, concrete action types, `ActionSequence` builder |
-| `console.go` | `ConsoleWatcher`, `ExceptionWatcher`, log formatting |
-| `angular.go` | `AngularHelper` — SPA-specific helpers for Angular 2+ and AngularJS 1.x |
-
----
+The application interacts with `Webview` methods. Each method constructs a CDP command, passes it to `CDPClient.Call()`, which serialises it as JSON over a WebSocket connection to Chrome. Chrome processes the command and returns a JSON response. Events (console messages, exceptions, navigation state changes) flow in the opposite direction: Chrome pushes them over the WebSocket, the `CDPClient` read loop dispatches them to registered handlers.
 
 ## CDP Connection
 
 ### Initialisation
 
-`NewCDPClient(debugURL string)` connects to Chrome's HTTP endpoint:
+`NewCDPClient(debugURL string)` connects to Chrome's HTTP endpoint in four steps:
 
 1. Issues `GET {debugURL}/json` to retrieve the list of available targets (tabs/pages).
 2. Selects the first target with `type == "page"` that has a `webSocketDebuggerUrl`.
 3. If no page target exists, calls `GET {debugURL}/json/new` to create one.
-4. Upgrades the connection to WebSocket using `github.com/gorilla/websocket`.
-5. Starts a background `readLoop` goroutine on the connection.
+4. Upgrades the connection to WebSocket using `github.com/gorilla/websocket` and starts a background `readLoop` goroutine.
 
 ### Message Protocol
 
 CDP uses JSON-framed messages over WebSocket. The client distinguishes two message kinds:
 
-- **Commands** — sent by the client with an integer `id`. Chrome responds with a matching `id` and a `result` or `error` field.
-- **Events** — sent by Chrome without an `id`. They carry a `method` name and a `params` map.
+- **Commands** -- sent by the client with an integer `id`. Chrome responds with a matching `id` and a `result` or `error` field.
+- **Events** -- sent by Chrome without an `id`. They carry a `method` name and a `params` map.
 
 The `CDPClient` maintains a `pending` map of `id -> chan *cdpResponse`. When `Call()` sends a command it registers a channel, then blocks on that channel until the matching response arrives or the context expires.
 
@@ -49,25 +50,42 @@ Events are dispatched to zero or more registered handlers via `OnEvent(method, h
 
 ```
 New(WithDebugURL(...))
-  └── NewCDPClient(url)
-        ├── HTTP GET /json          (target discovery)
-        ├── websocket.Dial(wsURL)   (WebSocket upgrade)
-        └── go readLoop()           (background goroutine)
+  +-- NewCDPClient(url)
+        |-- HTTP GET /json          (target discovery)
+        |-- websocket.Dial(wsURL)   (WebSocket upgrade)
+        +-- go readLoop()           (background goroutine)
 
 wv.Close()
-  └── cancel()                     (signals readLoop to stop)
-      └── CDPClient.Close()
-            ├── <-done              (waits for readLoop to finish)
-            └── conn.Close()        (closes WebSocket)
+  +-- cancel()                     (signals readLoop to stop)
+      +-- CDPClient.Close()
+            |-- <-done              (waits for readLoop to finish)
+            +-- conn.Close()        (closes WebSocket)
 ```
 
----
+## Key Types
 
-## Webview Struct
+### CDPClient
+
+```go
+type CDPClient struct {
+    conn     *websocket.Conn
+    debugURL string
+    wsURL    string
+    msgID    atomic.Int64                    // monotonic command ID
+    pending  map[int64]chan *cdpResponse      // awaiting responses
+    handlers map[string][]func(map[string]any) // event subscribers
+    ctx      context.Context
+    cancel   context.CancelFunc
+    done     chan struct{}
+}
+```
+
+The core transport layer. All WebSocket reads happen in the `readLoop` goroutine. All writes are serialised through a `sync.RWMutex`. The `pending` map and `handlers` map each have their own dedicated mutexes.
+
+### Webview
 
 ```go
 type Webview struct {
-    mu           sync.RWMutex
     client       *CDPClient
     ctx          context.Context
     cancel       context.CancelFunc
@@ -77,40 +95,22 @@ type Webview struct {
 }
 ```
 
-`New()` accepts functional options:
+The high-level API surface. Constructed via `New()` with functional options. On construction, it enables three CDP domains -- `Runtime`, `Page`, and `DOM` -- and registers a handler for `Runtime.consoleAPICalled` events so console capture begins immediately.
 
-| Option | Effect |
-|--------|--------|
-| `WithDebugURL(url)` | Required. Connects to Chrome at the given HTTP debug endpoint. |
-| `WithTimeout(d)` | Overrides the default 30-second operation timeout. |
-| `WithConsoleLimit(n)` | Maximum console messages to retain in memory (default 1000). |
+### ConsoleMessage
 
-On construction, `New()` enables three CDP domains — `Runtime`, `Page`, and `DOM` — and registers a handler for `Runtime.consoleAPICalled` events to begin console capture immediately.
+```go
+type ConsoleMessage struct {
+    Type      string    // log, warn, error, info, debug
+    Text      string    // message text
+    Timestamp time.Time
+    URL       string    // source URL
+    Line      int       // source line number
+    Column    int       // source column number
+}
+```
 
----
-
-## Navigation
-
-`Navigate(url string) error` calls `Page.navigate` then polls `document.readyState` via `Runtime.evaluate` at 100 ms intervals until the value is `"complete"` or the context deadline is exceeded.
-
-`Reload()`, `GoBack()`, and `GoForward()` follow the same pattern: issue a CDP command then call `waitForLoad`.
-
-`waitForSelector(ctx, selector)` polls `document.querySelector(selector)` at 100 ms intervals.
-
----
-
-## DOM Queries
-
-DOM queries follow a two-step pattern:
-
-1. Call `DOM.getDocument` to obtain the root node ID.
-2. Call `DOM.querySelector` or `DOM.querySelectorAll` with that node ID and the CSS selector string.
-
-For each matching node, `getElementInfo` calls:
-- `DOM.describeNode` — tag name and attribute list (flat alternating key/value array)
-- `DOM.getBoxModel` — bounding rectangle from the `content` quad
-
-The returned `ElementInfo` carries:
+### ElementInfo
 
 ```go
 type ElementInfo struct {
@@ -123,7 +123,37 @@ type ElementInfo struct {
 }
 ```
 
----
+### BoundingBox
+
+```go
+type BoundingBox struct {
+    X      float64
+    Y      float64
+    Width  float64
+    Height float64
+}
+```
+
+## Navigation
+
+`Navigate(url string) error` calls `Page.navigate` then polls `document.readyState` via `Runtime.evaluate` at 100 ms intervals until the value is `"complete"` or the context deadline is exceeded.
+
+`Reload()`, `GoBack()`, and `GoForward()` follow the same pattern: issue a CDP command then call `waitForLoad`.
+
+`waitForSelector(ctx, selector)` polls `document.querySelector(selector)` at 100 ms intervals until the element exists or the context expires.
+
+## DOM Queries
+
+DOM queries follow a two-step pattern:
+
+1. Call `DOM.getDocument` to obtain the root node ID.
+2. Call `DOM.querySelector` or `DOM.querySelectorAll` with that node ID and the CSS selector string.
+
+For each matching node, `getElementInfo` calls:
+- `DOM.describeNode` -- tag name and attribute list (flat alternating key/value array)
+- `DOM.getBoxModel` -- bounding rectangle from the `content` quad
+
+`QuerySelectorAllAll(selector)` returns an `iter.Seq[*ElementInfo]` iterator for lazy consumption of results.
 
 ## Click and Type
 
@@ -137,8 +167,6 @@ type ElementInfo struct {
 
 `PressKeyAction` handles named keys (Enter, Tab, Escape, Backspace, Delete, arrow keys, Home, End, Page Up, Page Down) by mapping them to their CDP virtual key codes and code strings.
 
----
-
 ## Console Capture
 
 Console capture is enabled in `New()` by subscribing to `Runtime.consoleAPICalled` events.
@@ -148,31 +176,50 @@ Console capture is enabled in `New()` by subscribing to `Runtime.consoleAPICalle
 The `Webview` itself accumulates messages in a slice guarded by `sync.RWMutex`. When the buffer reaches `consoleLimit`, the oldest 100 messages are dropped.
 
 ```go
-msgs := wv.GetConsole()   // returns a copy
+msgs := wv.GetConsole()       // returns a collected slice
 wv.ClearConsole()
+
+// Or iterate lazily
+for msg := range wv.GetConsoleAll() {
+    fmt.Println(msg.Text)
+}
 ```
 
 ### ConsoleWatcher
 
 `ConsoleWatcher` (constructed via `NewConsoleWatcher(wv)`) registers its own handler on the same `Runtime.consoleAPICalled` event. It adds filtering and reactive capabilities:
 
-- `AddFilter(ConsoleFilter)` — filter by message type and/or text pattern
-- `AddHandler(ConsoleHandler)` — callback invoked for each incoming message (outside the write lock)
-- `WaitForMessage(ctx, filter)` — blocks until a matching message arrives
-- `WaitForError(ctx)` — convenience wrapper for `type == "error"`
+- `AddFilter(ConsoleFilter)` -- filter by message type and/or text pattern (substring match)
+- `AddHandler(ConsoleHandler)` -- callback invoked for each incoming message (outside the write lock)
+- `WaitForMessage(ctx, filter)` -- blocks until a matching message arrives
+- `WaitForError(ctx)` -- convenience wrapper for `type == "error"`
 - `Errors()`, `Warnings()`, `HasErrors()`, `ErrorCount()`
+- `FilteredMessages()` / `FilteredMessagesAll()` -- returns messages matching all active filters
 
 ### ExceptionWatcher
 
-`ExceptionWatcher` subscribes to `Runtime.exceptionThrown` events and captures unhandled JavaScript exceptions with full stack traces. It exposes the same reactive pattern as `ConsoleWatcher`: `AddHandler`, `WaitForException`, `HasExceptions`.
+`ExceptionWatcher` subscribes to `Runtime.exceptionThrown` events and captures unhandled JavaScript exceptions with full stack traces:
 
----
+```go
+type ExceptionInfo struct {
+    Text         string
+    LineNumber   int
+    ColumnNumber int
+    URL          string
+    StackTrace   string
+    Timestamp    time.Time
+}
+```
+
+It exposes the same reactive pattern as `ConsoleWatcher`: `AddHandler`, `WaitForException`, `HasExceptions`, `Count`.
+
+### FormatConsoleOutput
+
+The package-level `FormatConsoleOutput(messages)` function formats a slice of `ConsoleMessage` into human-readable lines with timestamp, level prefix (`[ERROR]`, `[WARN]`, `[INFO]`, `[DEBUG]`, `[LOG]`), and message text.
 
 ## Screenshots
 
 `Screenshot()` calls `Page.captureScreenshot` with `format: "png"`. Chrome returns the image as a base64-encoded string in the `data` field of the response. The method decodes this and returns raw PNG bytes.
-
----
 
 ## JavaScript Evaluation
 
@@ -180,11 +227,13 @@ wv.ClearConsole()
 
 `Evaluate(script string) (any, error)` is the public wrapper that applies the default timeout.
 
-`GetURL()` and `GetTitle()` are thin wrappers that evaluate `window.location.href` and `document.title` respectively.
+Convenience wrappers:
 
-`GetHTML(selector string)` evaluates `outerHTML` on the matched element, or `document.documentElement.outerHTML` when the selector is empty.
-
----
+| Method | JavaScript evaluated |
+|--------|---------------------|
+| `GetURL()` | `window.location.href` |
+| `GetTitle()` | `document.title` |
+| `GetHTML(selector)` | `document.querySelector(selector)?.outerHTML` (or `document.documentElement.outerHTML` when selector is empty) |
 
 ## Action System
 
@@ -196,12 +245,36 @@ type Action interface {
 }
 ```
 
-Concrete action types cover: `Click`, `Type`, `Navigate`, `Wait`, `WaitForSelector`, `Scroll`, `ScrollIntoView`, `Focus`, `Blur`, `Clear`, `Select`, `Check`, `Hover`, `DoubleClick`, `RightClick`, `PressKey`, `SetAttribute`, `RemoveAttribute`, `SetValue`.
+### Concrete Action Types
 
-`ActionSequence` provides a fluent builder:
+| Type | Description |
+|------|-------------|
+| `ClickAction` | Click an element by CSS selector |
+| `TypeAction` | Type text into a focused element |
+| `NavigateAction` | Navigate to a URL and wait for load |
+| `WaitAction` | Wait for a fixed duration |
+| `WaitForSelectorAction` | Wait for an element to appear |
+| `ScrollAction` | Scroll to absolute coordinates |
+| `ScrollIntoViewAction` | Scroll an element into view smoothly |
+| `FocusAction` | Focus an element |
+| `BlurAction` | Remove focus from an element |
+| `ClearAction` | Clear an input's value, firing `input` and `change` events |
+| `SelectAction` | Select a value in a `<select>` element |
+| `CheckAction` | Check or uncheck a checkbox |
+| `HoverAction` | Hover over an element |
+| `DoubleClickAction` | Double-click an element |
+| `RightClickAction` | Right-click (context menu) an element |
+| `PressKeyAction` | Press a named key (Enter, Tab, Escape, etc.) |
+| `SetAttributeAction` | Set an HTML attribute on an element |
+| `RemoveAttributeAction` | Remove an HTML attribute from an element |
+| `SetValueAction` | Set an input's value, firing `input` and `change` events |
+
+### ActionSequence
+
+`ActionSequence` provides a fluent builder. Actions are executed sequentially; the first failure halts the sequence and returns the action index with the error.
 
 ```go
-err := NewActionSequence().
+err := webview.NewActionSequence().
     Navigate("https://example.com").
     WaitForSelector("#login-form").
     Type("#email", "user@example.com").
@@ -210,23 +283,24 @@ err := NewActionSequence().
     Execute(ctx, wv)
 ```
 
-`Execute` runs actions sequentially and returns the index and error of the first failure.
-
 ### File Upload and Drag-and-Drop
 
-`UploadFile(selector, filePaths)` uses `DOM.setFileInputFiles` on the node ID of the resolved file input element.
+These are methods on `Webview` rather than action types:
 
-`DragAndDrop(sourceSelector, targetSelector)` dispatches `mousePressed`, `mouseMoved`, and `mouseReleased` events between the centre points of the two elements.
-
----
+- `UploadFile(selector, filePaths)` -- uses `DOM.setFileInputFiles` on the resolved file input node
+- `DragAndDrop(sourceSelector, targetSelector)` -- dispatches `mousePressed`, `mouseMoved`, and `mouseReleased` events between the centre points of two elements
 
 ## Angular Helpers
 
-`AngularHelper` (constructed via `NewAngularHelper(wv)`) provides SPA-specific utilities. All methods accept the `AngularHelper.timeout` deadline (default 30 s).
+`AngularHelper` (constructed via `NewAngularHelper(wv)`) provides SPA-specific utilities for Angular 2+ applications. All methods use the helper's configurable timeout (default 30 seconds).
 
 ### Application Detection
 
-`isAngularApp` checks for Angular 2+ via `window.getAllAngularRootElements`, the `[ng-version]` attribute, or `window.ng.probe`. It also checks for AngularJS 1.x via `window.angular.element`.
+`isAngularApp` checks for Angular by probing:
+- `window.getAllAngularRootElements` (Angular 2+)
+- The `[ng-version]` attribute on DOM elements
+- `window.ng.probe` (Angular debug utilities)
+- `window.angular.element` (AngularJS 1.x)
 
 ### Zone.js Stability
 
@@ -234,44 +308,45 @@ err := NewActionSequence().
 
 ### Router Integration
 
-`NavigateByRouter(path)` obtains the `Router` service from the Angular injector and calls `router.navigateByUrl(path)`, then waits for Zone.js stability.
-
-`GetRouterState()` returns an `AngularRouterState` with the current URL, fragment, route params, and query params.
+- `NavigateByRouter(path)` -- obtains the `Router` service from the Angular injector, calls `router.navigateByUrl(path)`, then waits for Zone.js stability
+- `GetRouterState()` -- returns an `AngularRouterState` with the current URL, fragment, route params, and query params
 
 ### Component Introspection
 
-`GetComponentProperty(selector, property)` and `SetComponentProperty(selector, property, value)` access component instances via `window.ng.probe(element).componentInstance`. After setting a property, `ApplicationRef.tick()` is called to trigger change detection.
+These methods require the Angular application to be running in debug mode (`window.ng.probe` must be available):
 
-`CallComponentMethod(selector, method, args...)` invokes a method on the component instance and triggers change detection.
+- `GetComponentProperty(selector, property)` -- reads a property from a component instance
+- `SetComponentProperty(selector, property, value)` -- writes a property and triggers `ApplicationRef.tick()`
+- `CallComponentMethod(selector, method, args...)` -- invokes a method and triggers change detection
+- `GetService(name)` -- retrieves a named service from the root injector, returned as a JSON-serialisable value
 
-`GetService(name)` retrieves a named service from the root injector and returns a JSON-serialisable representation.
+### ngModel Access
 
-### ngModel
+- `GetNgModel(selector)` -- reads the current value of an ngModel-bound input
+- `SetNgModel(selector, value)` -- writes the value, fires `input` and `change` events, and triggers `ApplicationRef.tick()`
 
-`GetNgModel(selector)` reads the current value of an ngModel-bound input. `SetNgModel(selector, value)` writes the value, fires `input` and `change` events, and triggers `ApplicationRef.tick()`.
+### Other Helpers
 
----
+- `TriggerChangeDetection()` -- manually triggers `ApplicationRef.tick()` across all root elements
+- `WaitForComponent(selector)` -- polls until a component instance exists on the matched element
+- `DispatchEvent(selector, eventName, detail)` -- dispatches a `CustomEvent` on an element
 
 ## Multi-Tab Support
 
 `CDPClient.NewTab(url)` calls `GET {debugURL}/json/new?{url}` and returns a new `CDPClient` connected to the WebSocket of the newly created tab. Each tab has its own independent read loop and event handler registry, so console events and other notifications are tab-scoped.
 
-`CDPClient.CloseTab()` calls `Browser.close` on the tab's CDP session.
+`ListTargets(debugURL)` and `ListTargetsAll(debugURL)` are package-level utilities that query the HTTP endpoint without requiring an active WebSocket connection. `ListTargetsAll` returns an `iter.Seq[targetInfo]` iterator.
 
-`ListTargets(debugURL)` and `GetVersion(debugURL)` are package-level utilities that query the HTTP endpoint without requiring an active WebSocket connection.
-
----
+`GetVersion(debugURL)` returns Chrome version information as a string map.
 
 ## Emulation
 
-`SetViewport(width, height int)` calls `Emulation.setDeviceMetricsOverride` with `deviceScaleFactor: 1` and `mobile: false`.
-
-`SetUserAgent(ua string)` calls `Emulation.setUserAgentOverride`.
-
----
+- `SetViewport(width, height int)` -- calls `Emulation.setDeviceMetricsOverride` with `deviceScaleFactor: 1` and `mobile: false`
+- `SetUserAgent(ua string)` -- calls `Emulation.setUserAgentOverride`
 
 ## Thread Safety
 
-- `CDPClient` uses `sync.RWMutex` for WebSocket writes and `sync.Mutex` for the pending-response map. Event handler registration uses a separate `sync.RWMutex`.
-- `Webview` uses `sync.RWMutex` for its console log slice.
-- `ConsoleWatcher` and `ExceptionWatcher` use `sync.RWMutex` for their message and handler slices. Handlers are copied before being called so they execute outside the write lock.
+- **CDPClient** uses `sync.RWMutex` for WebSocket writes and `sync.Mutex` for the pending-response map. Event handler registration uses a separate `sync.RWMutex`.
+- **Webview** uses `sync.RWMutex` for its console log slice.
+- **ConsoleWatcher** and **ExceptionWatcher** use `sync.RWMutex` for their message and handler slices. Handlers are copied before being called so they execute outside the write lock.
+- Event handlers registered via `OnEvent` are dispatched in separate goroutines so they cannot block the WebSocket read loop.

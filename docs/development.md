@@ -1,10 +1,15 @@
+---
+title: Development Guide
+description: How to build, test, and contribute to go-webview -- prerequisites, test patterns, coding standards, and extension guides.
+---
+
 # Development Guide
 
 ## Prerequisites
 
 ### Go
 
-Go 1.25 or later is required. The module path is `forge.lthn.ai/core/go-webview`.
+Go 1.26 or later is required. The module path is `forge.lthn.ai/core/go-webview`.
 
 ### Chrome or Chromium
 
@@ -38,8 +43,6 @@ The only runtime dependency is `github.com/gorilla/websocket v1.5.3`, declared i
 go mod download
 ```
 
----
-
 ## Build and Test
 
 ### Running Tests
@@ -48,7 +51,7 @@ go mod download
 go test ./...
 ```
 
-Tests must pass before committing. There are currently no build tags that gate tests behind a Chrome connection; the integration tests in `webview_test.go` that require a live browser (`TestNew_Bad_InvalidDebugURL`) will fail gracefully because they assert that the error is non-nil when connecting to an unavailable port.
+Tests must pass before committing. The integration tests in `webview_test.go` that reference a live browser (`TestNew_Bad_InvalidDebugURL`) are designed to fail gracefully -- they assert that the error is non-nil when connecting to an unavailable port.
 
 ```bash
 # Run a specific test
@@ -58,17 +61,24 @@ go test -v -run TestActionSequence_Good ./...
 go test -v ./...
 ```
 
+### Vetting and Formatting
+
+```bash
+gofmt -w .
+go vet ./...
+```
+
 ### Test Naming Convention
 
 Tests follow the `_Good`, `_Bad`, `_Ugly` suffix pattern, consistent with the broader Core Go ecosystem:
 
-- `_Good` — happy path, verifies correct behaviour under valid input.
-- `_Bad` — expected error conditions, verifies that errors are returned and have the correct shape.
-- `_Ugly` — panic/edge cases, unexpected or degenerate inputs.
+- `_Good` -- happy path, verifies correct behaviour under valid input.
+- `_Bad` -- expected error conditions, verifies that errors are returned and have the correct shape.
+- `_Ugly` -- panic/edge cases, unexpected or degenerate inputs.
 
 All test functions use the standard `testing.T` interface; the project does not use a test framework.
 
-### CI Headless Tests
+### Headless CI Tests
 
 To add tests that exercise the full CDP stack in CI:
 
@@ -76,21 +86,19 @@ To add tests that exercise the full CDP stack in CI:
 2. Serve test fixtures using `net/http/httptest` so tests do not depend on external URLs.
 3. Use `WithTimeout` to set conservative deadlines appropriate for the CI environment.
 
----
-
 ## Code Organisation
 
 New source files belong in the root package (`package webview`). The package is intentionally a single flat package; do not create sub-packages.
 
 Keep separation between layers:
 
-- **CDP transport** — `cdp.go`. Do not put browser-level logic here.
-- **High-level API** — `webview.go`. Methods here should be safe to call from application code without CDP knowledge.
-- **Action types** — `actions.go`. Add new action types here; keep each action focused on a single interaction.
-- **Diagnostics** — `console.go`. Console and exception capture live here.
-- **SPA helpers** — `angular.go`. Framework-specific helpers belong here or in a new file named after the framework (e.g. `react.go`, `vue.go`).
-
----
+| Layer | File | Guidance |
+|-------|------|----------|
+| CDP transport | `cdp.go` | Do not put browser-level logic here. |
+| High-level API | `webview.go` | Methods here should be safe to call from application code without CDP knowledge. |
+| Action types | `actions.go` | Add new action types here; keep each action focused on a single interaction. |
+| Diagnostics | `console.go` | Console and exception capture live here. |
+| SPA helpers | `angular.go` | Framework-specific helpers belong here or in a new file named after the framework (e.g. `react.go`, `vue.go`). |
 
 ## Coding Standards
 
@@ -129,8 +137,6 @@ Every Go source file must begin with:
 
 The project is licenced under the European Union Public Licence 1.2 (EUPL-1.2).
 
----
-
 ## Commit Guidelines
 
 Use conventional commits:
@@ -160,8 +166,6 @@ WaitForException API consistent with ConsoleWatcher.
 Co-Authored-By: Virgil <virgil@lethean.io>
 ```
 
----
-
 ## Adding a New Action Type
 
 1. Define a struct in `actions.go` with exported fields for the action's parameters.
@@ -188,8 +192,6 @@ func (s *ActionSequence) Submit(selector string) *ActionSequence {
 }
 ```
 
----
-
 ## Adding a New Angular Helper
 
 Add methods to `AngularHelper` in `angular.go`. Follow the established pattern:
@@ -200,7 +202,14 @@ Add methods to `AngularHelper` in `angular.go`. Follow the established pattern:
 4. After state-modifying operations, call `TriggerChangeDetection()` or inline `appRef.tick()`.
 5. For polling-based waits, use a `time.NewTicker` at 100 ms and select over `ctx.Done()`.
 
----
+## Adding a New SPA Framework Helper
+
+To add support for a different single-page application framework (e.g. React, Vue):
+
+1. Create a new file named after the framework (e.g. `react.go`).
+2. Define a helper struct that holds a `*Webview` reference and a configurable timeout.
+3. Use `evaluate()` to inject JavaScript that probes framework-specific globals and APIs.
+4. Follow the same `context.WithTimeout` + polling pattern established in `angular.go`.
 
 ## Forge Push
 

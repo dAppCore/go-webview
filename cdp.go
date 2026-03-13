@@ -63,8 +63,8 @@ type cdpError struct {
 	Data    string `json:"data,omitempty"`
 }
 
-// targetInfo represents Chrome DevTools target information.
-type targetInfo struct {
+// TargetInfo represents Chrome DevTools target information.
+type TargetInfo struct {
 	ID                   string `json:"id"`
 	Type                 string `json:"type"`
 	Title                string `json:"title"`
@@ -87,7 +87,7 @@ func NewCDPClient(debugURL string) (*CDPClient, error) {
 		return nil, fmt.Errorf("failed to read targets: %w", err)
 	}
 
-	var targets []targetInfo
+	var targets []TargetInfo
 	if err := json.Unmarshal(body, &targets); err != nil {
 		return nil, fmt.Errorf("failed to parse targets: %w", err)
 	}
@@ -114,7 +114,7 @@ func NewCDPClient(debugURL string) (*CDPClient, error) {
 			return nil, fmt.Errorf("failed to read new target: %w", err)
 		}
 
-		var newTarget targetInfo
+		var newTarget TargetInfo
 		if err := json.Unmarshal(body, &newTarget); err != nil {
 			return nil, fmt.Errorf("failed to parse new target: %w", err)
 		}
@@ -302,7 +302,7 @@ func (c *CDPClient) NewTab(url string) (*CDPClient, error) {
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
-	var target targetInfo
+	var target TargetInfo
 	if err := json.Unmarshal(body, &target); err != nil {
 		return nil, fmt.Errorf("failed to parse target: %w", err)
 	}
@@ -347,7 +347,7 @@ func (c *CDPClient) CloseTab() error {
 }
 
 // ListTargets returns all available targets.
-func ListTargets(debugURL string) ([]targetInfo, error) {
+func ListTargets(debugURL string) ([]TargetInfo, error) {
 	resp, err := http.Get(debugURL + "/json")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get targets: %w", err)
@@ -359,7 +359,7 @@ func ListTargets(debugURL string) ([]targetInfo, error) {
 		return nil, fmt.Errorf("failed to read targets: %w", err)
 	}
 
-	var targets []targetInfo
+	var targets []TargetInfo
 	if err := json.Unmarshal(body, &targets); err != nil {
 		return nil, fmt.Errorf("failed to parse targets: %w", err)
 	}
@@ -368,8 +368,8 @@ func ListTargets(debugURL string) ([]targetInfo, error) {
 }
 
 // ListTargetsAll returns an iterator over all available targets.
-func ListTargetsAll(debugURL string) iter.Seq[targetInfo] {
-	return func(yield func(targetInfo) bool) {
+func ListTargetsAll(debugURL string) iter.Seq[TargetInfo] {
+	return func(yield func(TargetInfo) bool) {
 		targets, err := ListTargets(debugURL)
 		if err != nil {
 			return

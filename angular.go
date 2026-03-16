@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	coreerr "forge.lthn.ai/core/go-log"
 )
 
 // AngularHelper provides Angular-specific testing utilities.
@@ -43,7 +45,7 @@ func (ah *AngularHelper) waitForAngular(ctx context.Context) error {
 		return err
 	}
 	if !isAngular {
-		return fmt.Errorf("not an Angular application")
+		return coreerr.E("AngularHelper.waitForAngular", "not an Angular application", nil)
 	}
 
 	// Wait for Zone.js stability
@@ -238,7 +240,7 @@ func (ah *AngularHelper) NavigateByRouter(path string) error {
 
 	_, err := ah.wv.evaluate(ctx, script)
 	if err != nil {
-		return fmt.Errorf("failed to navigate: %w", err)
+		return coreerr.E("AngularHelper.NavigateByRouter", "failed to navigate", err)
 	}
 
 	// Wait for navigation to complete
@@ -279,13 +281,13 @@ func (ah *AngularHelper) GetRouterState() (*AngularRouterState, error) {
 	}
 
 	if result == nil {
-		return nil, fmt.Errorf("could not get router state")
+		return nil, coreerr.E("AngularHelper.GetRouterState", "could not get router state", nil)
 	}
 
 	// Parse result
 	resultMap, ok := result.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("invalid router state format")
+		return nil, coreerr.E("AngularHelper.GetRouterState", "invalid router state format", nil)
 	}
 
 	state := &AngularRouterState{

@@ -3,7 +3,6 @@ package webview
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"iter"
 	"net/http"
@@ -12,6 +11,8 @@ import (
 	"sync/atomic"
 
 	"github.com/gorilla/websocket"
+
+	coreerr "forge.lthn.ai/core/go-log"
 )
 
 // CDPClient handles communication with Chrome DevTools Protocol via WebSocket.
@@ -78,18 +79,18 @@ func NewCDPClient(debugURL string) (*CDPClient, error) {
 	// Get available targets
 	resp, err := http.Get(debugURL + "/json")
 	if err != nil {
-		return nil, fmt.Errorf("failed to get targets: %w", err)
+		return nil, coreerr.E("CDPClient.New", "failed to get targets", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read targets: %w", err)
+		return nil, coreerr.E("CDPClient.New", "failed to read targets", err)
 	}
 
 	var targets []TargetInfo
 	if err := json.Unmarshal(body, &targets); err != nil {
-		return nil, fmt.Errorf("failed to parse targets: %w", err)
+		return nil, coreerr.E("CDPClient.New", "failed to parse targets", err)
 	}
 
 	// Find a page target
@@ -105,31 +106,31 @@ func NewCDPClient(debugURL string) (*CDPClient, error) {
 		// Try to create a new target
 		resp, err := http.Get(debugURL + "/json/new")
 		if err != nil {
-			return nil, fmt.Errorf("no page targets found and failed to create new: %w", err)
+			return nil, coreerr.E("CDPClient.New", "no page targets found and failed to create new", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return nil, fmt.Errorf("failed to read new target: %w", err)
+			return nil, coreerr.E("CDPClient.New", "failed to read new target", err)
 		}
 
 		var newTarget TargetInfo
 		if err := json.Unmarshal(body, &newTarget); err != nil {
-			return nil, fmt.Errorf("failed to parse new target: %w", err)
+			return nil, coreerr.E("CDPClient.New", "failed to parse new target", err)
 		}
 
 		wsURL = newTarget.WebSocketDebuggerURL
 	}
 
 	if wsURL == "" {
-		return nil, fmt.Errorf("no WebSocket URL available")
+		return nil, coreerr.E("CDPClient.New", "no WebSocket URL available", nil)
 	}
 
 	// Connect to WebSocket
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to WebSocket: %w", err)
+		return nil, coreerr.E("CDPClient.New", "failed to connect to WebSocket", err)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -185,7 +186,7 @@ func (c *CDPClient) Call(ctx context.Context, method string, params map[string]a
 	err := c.conn.WriteJSON(msg)
 	c.mu.Unlock()
 	if err != nil {
-		return nil, fmt.Errorf("failed to send message: %w", err)
+		return nil, coreerr.E("CDPClient.Call", "failed to send message", err)
 	}
 
 	// Wait for response
@@ -194,7 +195,7 @@ func (c *CDPClient) Call(ctx context.Context, method string, params map[string]a
 		return nil, ctx.Err()
 	case resp := <-respCh:
 		if resp.Error != nil {
-			return nil, fmt.Errorf("CDP error %d: %s", resp.Error.Code, resp.Error.Message)
+			return nil, coreerr.E("CDPClient.Call", resp.Error.Message, nil)
 		}
 		return resp.Result, nil
 	}
@@ -293,28 +294,28 @@ func (c *CDPClient) NewTab(url string) (*CDPClient, error) {
 
 	resp, err := http.Get(endpoint)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create new tab: %w", err)
+		return nil, coreerr.E("CDPClient.NewTab", "failed to create new tab", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
+		return nil, coreerr.E("CDPClient.NewTab", "failed to read response", err)
 	}
 
 	var target TargetInfo
 	if err := json.Unmarshal(body, &target); err != nil {
-		return nil, fmt.Errorf("failed to parse target: %w", err)
+		return nil, coreerr.E("CDPClient.NewTab", "failed to parse target", err)
 	}
 
 	if target.WebSocketDebuggerURL == "" {
-		return nil, fmt.Errorf("no WebSocket URL for new tab")
+		return nil, coreerr.E("CDPClient.NewTab", "no WebSocket URL for new tab", nil)
 	}
 
 	// Connect to new tab
 	conn, _, err := websocket.DefaultDialer.Dial(target.WebSocketDebuggerURL, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to new tab: %w", err)
+		return nil, coreerr.E("CDPClient.NewTab", "failed to connect to new tab", err)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -350,18 +351,18 @@ func (c *CDPClient) CloseTab() error {
 func ListTargets(debugURL string) ([]TargetInfo, error) {
 	resp, err := http.Get(debugURL + "/json")
 	if err != nil {
-		return nil, fmt.Errorf("failed to get targets: %w", err)
+		return nil, coreerr.E("ListTargets", "failed to get targets", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read targets: %w", err)
+		return nil, coreerr.E("ListTargets", "failed to read targets", err)
 	}
 
 	var targets []TargetInfo
 	if err := json.Unmarshal(body, &targets); err != nil {
-		return nil, fmt.Errorf("failed to parse targets: %w", err)
+		return nil, coreerr.E("ListTargets", "failed to parse targets", err)
 	}
 
 	return targets, nil
@@ -386,18 +387,18 @@ func ListTargetsAll(debugURL string) iter.Seq[TargetInfo] {
 func GetVersion(debugURL string) (map[string]string, error) {
 	resp, err := http.Get(debugURL + "/json/version")
 	if err != nil {
-		return nil, fmt.Errorf("failed to get version: %w", err)
+		return nil, coreerr.E("GetVersion", "failed to get version", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read version: %w", err)
+		return nil, coreerr.E("GetVersion", "failed to read version", err)
 	}
 
 	var version map[string]string
 	if err := json.Unmarshal(body, &version); err != nil {
-		return nil, fmt.Errorf("failed to parse version: %w", err)
+		return nil, coreerr.E("GetVersion", "failed to parse version", err)
 	}
 
 	return version, nil

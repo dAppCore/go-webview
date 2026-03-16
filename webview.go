@@ -30,6 +30,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	coreerr "forge.lthn.ai/core/go-log"
 )
 
 // Webview represents a connection to a Chrome DevTools Protocol endpoint.
@@ -80,7 +82,7 @@ func WithDebugURL(url string) Option {
 	return func(wv *Webview) error {
 		client, err := NewCDPClient(url)
 		if err != nil {
-			return fmt.Errorf("failed to connect to Chrome DevTools: %w", err)
+			return coreerr.E("Webview.WithDebugURL", "failed to connect to Chrome DevTools", err)
 		}
 		wv.client = client
 		return nil
@@ -125,13 +127,13 @@ func New(opts ...Option) (*Webview, error) {
 
 	if wv.client == nil {
 		cancel()
-		return nil, fmt.Errorf("no debug URL provided; use WithDebugURL option")
+		return nil, coreerr.E("Webview.New", "no debug URL provided; use WithDebugURL option", nil)
 	}
 
 	// Enable console capture
 	if err := wv.enableConsole(); err != nil {
 		cancel()
-		return nil, fmt.Errorf("failed to enable console capture: %w", err)
+		return nil, coreerr.E("Webview.New", "failed to enable console capture", err)
 	}
 
 	return wv, nil
@@ -155,7 +157,7 @@ func (wv *Webview) Navigate(url string) error {
 		"url": url,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to navigate: %w", err)
+		return coreerr.E("Webview.Navigate", "failed to navigate", err)
 	}
 
 	// Wait for page load
@@ -248,17 +250,17 @@ func (wv *Webview) Screenshot() ([]byte, error) {
 		"format": "png",
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to capture screenshot: %w", err)
+		return nil, coreerr.E("Webview.Screenshot", "failed to capture screenshot", err)
 	}
 
 	dataStr, ok := result["data"].(string)
 	if !ok {
-		return nil, fmt.Errorf("invalid screenshot data")
+		return nil, coreerr.E("Webview.Screenshot", "invalid screenshot data", nil)
 	}
 
 	data, err := base64.StdEncoding.DecodeString(dataStr)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode screenshot: %w", err)
+		return nil, coreerr.E("Webview.Screenshot", "failed to decode screenshot", err)
 	}
 
 	return data, nil
@@ -294,7 +296,7 @@ func (wv *Webview) GetURL() (string, error) {
 
 	url, ok := result.(string)
 	if !ok {
-		return "", fmt.Errorf("invalid URL result")
+		return "", coreerr.E("Webview.GetURL", "invalid URL result", nil)
 	}
 
 	return url, nil
@@ -312,7 +314,7 @@ func (wv *Webview) GetTitle() (string, error) {
 
 	title, ok := result.(string)
 	if !ok {
-		return "", fmt.Errorf("invalid title result")
+		return "", coreerr.E("Webview.GetTitle", "invalid title result", nil)
 	}
 
 	return title, nil
@@ -337,7 +339,7 @@ func (wv *Webview) GetHTML(selector string) (string, error) {
 
 	html, ok := result.(string)
 	if !ok {
-		return "", fmt.Errorf("invalid HTML result")
+		return "", coreerr.E("Webview.GetHTML", "invalid HTML result", nil)
 	}
 
 	return html, nil
@@ -375,7 +377,7 @@ func (wv *Webview) Reload() error {
 
 	_, err := wv.client.Call(ctx, "Page.reload", nil)
 	if err != nil {
-		return fmt.Errorf("failed to reload: %w", err)
+		return coreerr.E("Webview.Reload", "failed to reload", err)
 	}
 
 	return wv.waitForLoad(ctx)
@@ -541,17 +543,17 @@ func (wv *Webview) evaluate(ctx context.Context, script string) (any, error) {
 		"returnByValue": true,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to evaluate script: %w", err)
+		return nil, coreerr.E("Webview.evaluate", "failed to evaluate script", err)
 	}
 
 	// Check for exception
 	if exceptionDetails, ok := result["exceptionDetails"].(map[string]any); ok {
 		if exception, ok := exceptionDetails["exception"].(map[string]any); ok {
 			if description, ok := exception["description"].(string); ok {
-				return nil, fmt.Errorf("JavaScript error: %s", description)
+				return nil, coreerr.E("Webview.evaluate", description, nil)
 			}
 		}
-		return nil, fmt.Errorf("JavaScript error")
+		return nil, coreerr.E("Webview.evaluate", "JavaScript error", nil)
 	}
 
 	// Extract result value
@@ -567,17 +569,17 @@ func (wv *Webview) querySelector(ctx context.Context, selector string) (*Element
 	// Get document root
 	docResult, err := wv.client.Call(ctx, "DOM.getDocument", nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get document: %w", err)
+		return nil, coreerr.E("Webview.querySelector", "failed to get document", err)
 	}
 
 	root, ok := docResult["root"].(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("invalid document root")
+		return nil, coreerr.E("Webview.querySelector", "invalid document root", nil)
 	}
 
 	rootID, ok := root["nodeId"].(float64)
 	if !ok {
-		return nil, fmt.Errorf("invalid root node ID")
+		return nil, coreerr.E("Webview.querySelector", "invalid root node ID", nil)
 	}
 
 	// Query selector
@@ -586,12 +588,12 @@ func (wv *Webview) querySelector(ctx context.Context, selector string) (*Element
 		"selector": selector,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to query selector: %w", err)
+		return nil, coreerr.E("Webview.querySelector", "failed to query selector", err)
 	}
 
 	nodeID, ok := queryResult["nodeId"].(float64)
 	if !ok || nodeID == 0 {
-		return nil, fmt.Errorf("element not found: %s", selector)
+		return nil, coreerr.E("Webview.querySelector", "element not found: "+selector, nil)
 	}
 
 	return wv.getElementInfo(ctx, int(nodeID))
@@ -602,17 +604,17 @@ func (wv *Webview) querySelectorAll(ctx context.Context, selector string) ([]*El
 	// Get document root
 	docResult, err := wv.client.Call(ctx, "DOM.getDocument", nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get document: %w", err)
+		return nil, coreerr.E("Webview.querySelectorAll", "failed to get document", err)
 	}
 
 	root, ok := docResult["root"].(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("invalid document root")
+		return nil, coreerr.E("Webview.querySelectorAll", "invalid document root", nil)
 	}
 
 	rootID, ok := root["nodeId"].(float64)
 	if !ok {
-		return nil, fmt.Errorf("invalid root node ID")
+		return nil, coreerr.E("Webview.querySelectorAll", "invalid root node ID", nil)
 	}
 
 	// Query selector all
@@ -621,12 +623,12 @@ func (wv *Webview) querySelectorAll(ctx context.Context, selector string) ([]*El
 		"selector": selector,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to query selector all: %w", err)
+		return nil, coreerr.E("Webview.querySelectorAll", "failed to query selector all", err)
 	}
 
 	nodeIDs, ok := queryResult["nodeIds"].([]any)
 	if !ok {
-		return nil, fmt.Errorf("invalid node IDs")
+		return nil, coreerr.E("Webview.querySelectorAll", "invalid node IDs", nil)
 	}
 
 	elements := make([]*ElementInfo, 0, len(nodeIDs))
@@ -653,7 +655,7 @@ func (wv *Webview) getElementInfo(ctx context.Context, nodeID int) (*ElementInfo
 
 	node, ok := descResult["node"].(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("invalid node description")
+		return nil, coreerr.E("Webview.getElementInfo", "invalid node description", nil)
 	}
 
 	tagName, _ := node["nodeName"].(string)
@@ -726,7 +728,7 @@ func (wv *Webview) click(ctx context.Context, selector string) error {
 			"clickCount": 1,
 		})
 		if err != nil {
-			return fmt.Errorf("failed to dispatch %s: %w", eventType, err)
+			return coreerr.E("Webview.click", "failed to dispatch "+eventType, err)
 		}
 	}
 
@@ -739,7 +741,7 @@ func (wv *Webview) typeText(ctx context.Context, selector, text string) error {
 	script := fmt.Sprintf("document.querySelector(%q)?.focus()", selector)
 	_, err := wv.evaluate(ctx, script)
 	if err != nil {
-		return fmt.Errorf("failed to focus element: %w", err)
+		return coreerr.E("Webview.typeText", "failed to focus element", err)
 	}
 
 	// Type each character
@@ -749,14 +751,14 @@ func (wv *Webview) typeText(ctx context.Context, selector, text string) error {
 			"text": string(char),
 		})
 		if err != nil {
-			return fmt.Errorf("failed to dispatch keyDown: %w", err)
+			return coreerr.E("Webview.typeText", "failed to dispatch keyDown", err)
 		}
 
 		_, err = wv.client.Call(ctx, "Input.dispatchKeyEvent", map[string]any{
 			"type": "keyUp",
 		})
 		if err != nil {
-			return fmt.Errorf("failed to dispatch keyUp: %w", err)
+			return coreerr.E("Webview.typeText", "failed to dispatch keyUp", err)
 		}
 	}
 

@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"time"
+
+	coreerr "forge.lthn.ai/core/go-log"
 )
 
 // Action represents a browser action that can be performed.
@@ -43,7 +45,7 @@ func (a NavigateAction) Execute(ctx context.Context, wv *Webview) error {
 		"url": a.URL,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to navigate: %w", err)
+		return coreerr.E("NavigateAction.Execute", "failed to navigate", err)
 	}
 	return wv.waitForLoad(ctx)
 }
@@ -191,7 +193,7 @@ func (a HoverAction) Execute(ctx context.Context, wv *Webview) error {
 	}
 
 	if elem.BoundingBox == nil {
-		return fmt.Errorf("element has no bounding box")
+		return coreerr.E("HoverAction.Execute", "element has no bounding box", nil)
 	}
 
 	x := elem.BoundingBox.X + elem.BoundingBox.Width/2
@@ -459,7 +461,7 @@ func (s *ActionSequence) WaitForSelector(selector string) *ActionSequence {
 func (s *ActionSequence) Execute(ctx context.Context, wv *Webview) error {
 	for i, action := range s.actions {
 		if err := action.Execute(ctx, wv); err != nil {
-			return fmt.Errorf("action %d failed: %w", i, err)
+			return coreerr.E("ActionSequence.Execute", fmt.Sprintf("action %d failed", i), err)
 		}
 	}
 	return nil
@@ -492,18 +494,18 @@ func (wv *Webview) DragAndDrop(sourceSelector, targetSelector string) error {
 	// Get source and target elements
 	source, err := wv.querySelector(ctx, sourceSelector)
 	if err != nil {
-		return fmt.Errorf("source element not found: %w", err)
+		return coreerr.E("Webview.DragAndDrop", "source element not found", err)
 	}
 	if source.BoundingBox == nil {
-		return fmt.Errorf("source element has no bounding box")
+		return coreerr.E("Webview.DragAndDrop", "source element has no bounding box", nil)
 	}
 
 	target, err := wv.querySelector(ctx, targetSelector)
 	if err != nil {
-		return fmt.Errorf("target element not found: %w", err)
+		return coreerr.E("Webview.DragAndDrop", "target element not found", err)
 	}
 	if target.BoundingBox == nil {
-		return fmt.Errorf("target element has no bounding box")
+		return coreerr.E("Webview.DragAndDrop", "target element has no bounding box", nil)
 	}
 
 	// Calculate center points

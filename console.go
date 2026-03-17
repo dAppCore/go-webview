@@ -292,7 +292,8 @@ func (cw *ConsoleWatcher) addMessage(msg ConsoleMessage) {
 
 	// Enforce limit
 	if len(cw.messages) >= cw.limit {
-		cw.messages = cw.messages[len(cw.messages)-cw.limit+100:]
+		drop := min(100, len(cw.messages))
+		cw.messages = cw.messages[drop:]
 	}
 	cw.messages = append(cw.messages, msg)
 

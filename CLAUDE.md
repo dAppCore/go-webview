@@ -56,7 +56,7 @@ Key patterns:
 - Co-author trailer on every commit: `Co-Authored-By: Virgil <virgil@lethean.io>`
 - Test naming: `_Good` (happy path), `_Bad` (expected errors), `_Ugly` (panics/edge cases)
 - Standard `testing.T` only — no test frameworks
-- Wrap errors with `fmt.Errorf("context: %w", err)`
+- Wrap errors with `coreerr.E("Scope.Method", "description", err)` from `go-log`, never `fmt.Errorf`
 - Protect shared state with `sync.RWMutex`; copy handler slices before calling outside lock
 
 ## Docs

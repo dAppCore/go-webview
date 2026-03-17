@@ -412,7 +412,8 @@ func (wv *Webview) addConsoleMessage(msg ConsoleMessage) {
 
 	if len(wv.consoleLogs) >= wv.consoleLimit {
 		// Remove oldest messages
-		wv.consoleLogs = wv.consoleLogs[len(wv.consoleLogs)-wv.consoleLimit+100:]
+		drop := min(100, len(wv.consoleLogs))
+		wv.consoleLogs = wv.consoleLogs[drop:]
 	}
 	wv.consoleLogs = append(wv.consoleLogs, msg)
 }

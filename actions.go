@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	coreerr "forge.lthn.ai/core/go-log"
+	coreerr "dappco.re/go/core/log"
 )
 
 // Action represents a browser action that can be performed.

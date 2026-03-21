@@ -9,7 +9,7 @@ description: How to build, test, and contribute to go-webview -- prerequisites, 
 
 ### Go
 
-Go 1.26 or later is required. The module path is `forge.lthn.ai/core/go-webview`.
+Go 1.26 or later is required. The module path is `dappco.re/go/core/webview`.
 
 ### Chrome or Chromium
 

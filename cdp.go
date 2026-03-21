@@ -12,7 +12,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	coreerr "forge.lthn.ai/core/go-log"
+	coreerr "dappco.re/go/core/log"
 )
 
 // CDPClient handles communication with Chrome DevTools Protocol via WebSocket.

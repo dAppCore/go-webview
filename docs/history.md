@@ -2,7 +2,7 @@
 
 ## Origin
 
-go-webview was extracted from the `pkg/webview/` directory of `forge.lthn.ai/core/go` on 19 February 2026 by Virgil. The extraction made the package independently importable and gave it its own module path, dependency management, and commit history.
+go-webview was extracted from the `pkg/webview/` directory of `dappco.re/go/core` on 19 February 2026 by Virgil. The extraction made the package independently importable and gave it its own module path, dependency management, and commit history.
 
 ---
 
@@ -12,7 +12,7 @@ go-webview was extracted from the `pkg/webview/` directory of `forge.lthn.ai/cor
 
 Commit `45f119b9ac0e0ebe34f5c8387a070a5b8bd2de6b` — 2026-02-19
 
-Initial extraction. All source files were moved from `go` `pkg/webview/` into the root of this repository. The module was renamed from the internal path to `forge.lthn.ai/core/go-webview`.
+Initial extraction. All source files were moved from `go` `pkg/webview/` into the root of this repository. The module was renamed from the internal path to `dappco.re/go/core/webview`.
 
 Files established at extraction:
 

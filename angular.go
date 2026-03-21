@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	coreerr "forge.lthn.ai/core/go-log"
+	coreerr "dappco.re/go/core/log"
 )
 
 // AngularHelper provides Angular-specific testing utilities.

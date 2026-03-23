@@ -34,6 +34,7 @@ err = webview.NewActionSequence().
 
 ## Documentation
 
+- [API Contract](docs/api-contract.md) — exported API inventory with signatures and current test coverage
 - [Architecture](docs/architecture.md) — CDP connection, DOM queries, console capture, Angular helpers, action system
 - [Development Guide](docs/development.md) — prerequisites, build, test patterns, adding actions
 - [Project History](docs/history.md) — completed phases, known limitations, future considerations

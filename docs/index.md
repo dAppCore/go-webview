@@ -136,6 +136,7 @@ value, err := ah.GetComponentProperty("app-widget", "title")
 
 ## Further Documentation
 
+- [API Contract](api-contract.md) -- exported type, function, and method inventory with signatures and test coverage notes
 - [Architecture](architecture.md) -- internals, data flow, CDP protocol, type reference
 - [Development Guide](development.md) -- build, test, contribute, coding standards
 - [Project History](history.md) -- extraction origin, completed phases, known limitations

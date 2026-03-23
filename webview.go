@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: EUPL-1.2
 // Package webview provides browser automation via Chrome DevTools Protocol (CDP).
 //
 // The package allows controlling Chrome/Chromium browsers for automated testing,
@@ -118,9 +119,16 @@ func New(opts ...Option) (*Webview, error) {
 		consoleLimit: 1000,
 	}
 
+	cleanupOnError := func() {
+		cancel()
+		if wv.client != nil {
+			_ = wv.client.Close()
+		}
+	}
+
 	for _, opt := range opts {
 		if err := opt(wv); err != nil {
-			cancel()
+			cleanupOnError()
 			return nil, err
 		}
 	}
@@ -132,7 +140,7 @@ func New(opts ...Option) (*Webview, error) {
 
 	// Enable console capture
 	if err := wv.enableConsole(); err != nil {
-		cancel()
+		cleanupOnError()
 		return nil, coreerr.E("Webview.New", "failed to enable console capture", err)
 	}
 
@@ -542,6 +550,7 @@ func (wv *Webview) evaluate(ctx context.Context, script string) (any, error) {
 	result, err := wv.client.Call(ctx, "Runtime.evaluate", map[string]any{
 		"expression":    script,
 		"returnByValue": true,
+		"awaitPromise":  true,
 	})
 	if err != nil {
 		return nil, coreerr.E("Webview.evaluate", "failed to evaluate script", err)

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: EUPL-1.2
 package webview
 
 import (
@@ -427,6 +428,8 @@ func TestFormatJSValue_Good(t *testing.T) {
 		{nil, "null"},
 		{42, "42"},
 		{3.14, "3.14"},
+		{map[string]any{"enabled": true}, `{"enabled":true}`},
+		{[]any{1, "two"}, `[1,"two"]`},
 	}
 
 	for _, tc := range tests {
@@ -512,7 +515,7 @@ func TestConsoleWatcherFilter_Good(t *testing.T) {
 		messages: make([]ConsoleMessage, 0),
 		filters:  make([]ConsoleFilter, 0),
 		limit:    1000,
-		handlers: make([]ConsoleHandler, 0),
+		handlers: make([]consoleHandlerRegistration, 0),
 	}
 
 	// No filters — everything matches
@@ -556,7 +559,7 @@ func TestConsoleWatcherCounts_Good(t *testing.T) {
 		},
 		filters:  make([]ConsoleFilter, 0),
 		limit:    1000,
-		handlers: make([]ConsoleHandler, 0),
+		handlers: make([]consoleHandlerRegistration, 0),
 	}
 
 	if cw.Count() != 5 {
@@ -592,7 +595,7 @@ func TestConsoleWatcherCounts_Good(t *testing.T) {
 func TestExceptionWatcher_Good(t *testing.T) {
 	ew := &ExceptionWatcher{
 		exceptions: make([]ExceptionInfo, 0),
-		handlers:   make([]func(ExceptionInfo), 0),
+		handlers:   make([]exceptionHandlerRegistration, 0),
 	}
 
 	if ew.HasExceptions() {
@@ -682,7 +685,7 @@ func TestConsoleWatcherAddMessage_Good(t *testing.T) {
 		messages: make([]ConsoleMessage, 0),
 		filters:  make([]ConsoleFilter, 0),
 		limit:    5,
-		handlers: make([]ConsoleHandler, 0),
+		handlers: make([]consoleHandlerRegistration, 0),
 	}
 
 	// Add messages past the limit
@@ -704,7 +707,7 @@ func TestConsoleWatcherHandler_Good(t *testing.T) {
 		messages: make([]ConsoleMessage, 0),
 		filters:  make([]ConsoleFilter, 0),
 		limit:    1000,
-		handlers: make([]ConsoleHandler, 0),
+		handlers: make([]consoleHandlerRegistration, 0),
 	}
 
 	var received ConsoleMessage
@@ -729,7 +732,7 @@ func TestConsoleWatcherFilteredMessages_Good(t *testing.T) {
 		},
 		filters:  []ConsoleFilter{{Type: "error"}},
 		limit:    1000,
-		handlers: make([]ConsoleHandler, 0),
+		handlers: make([]consoleHandlerRegistration, 0),
 	}
 
 	filtered := cw.FilteredMessages()

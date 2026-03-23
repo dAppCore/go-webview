@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: EUPL-1.2
 package webview
 
 import (
@@ -7,17 +8,19 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
 // ConsoleWatcher provides advanced console message watching capabilities.
 type ConsoleWatcher struct {
-	mu       sync.RWMutex
-	wv       *Webview
-	messages []ConsoleMessage
-	filters  []ConsoleFilter
-	limit    int
-	handlers []ConsoleHandler
+	mu            sync.RWMutex
+	wv            *Webview
+	messages      []ConsoleMessage
+	filters       []ConsoleFilter
+	limit         int
+	handlers      []consoleHandlerRegistration
+	nextHandlerID atomic.Int64
 }
 
 // ConsoleFilter filters console messages.
@@ -29,6 +32,11 @@ type ConsoleFilter struct {
 // ConsoleHandler is called when a matching console message is received.
 type ConsoleHandler func(msg ConsoleMessage)
 
+type consoleHandlerRegistration struct {
+	id      int64
+	handler ConsoleHandler
+}
+
 // NewConsoleWatcher creates a new console watcher for the webview.
 func NewConsoleWatcher(wv *Webview) *ConsoleWatcher {
 	cw := &ConsoleWatcher{
@@ -36,7 +44,7 @@ func NewConsoleWatcher(wv *Webview) *ConsoleWatcher {
 		messages: make([]ConsoleMessage, 0, 100),
 		filters:  make([]ConsoleFilter, 0),
 		limit:    1000,
-		handlers: make([]ConsoleHandler, 0),
+		handlers: make([]consoleHandlerRegistration, 0),
 	}
 
 	// Subscribe to console events from the webview's client
@@ -63,9 +71,30 @@ func (cw *ConsoleWatcher) ClearFilters() {
 
 // AddHandler adds a handler for console messages.
 func (cw *ConsoleWatcher) AddHandler(handler ConsoleHandler) {
+	cw.addHandler(handler)
+}
+
+func (cw *ConsoleWatcher) addHandler(handler ConsoleHandler) int64 {
 	cw.mu.Lock()
 	defer cw.mu.Unlock()
-	cw.handlers = append(cw.handlers, handler)
+	id := cw.nextHandlerID.Add(1)
+	cw.handlers = append(cw.handlers, consoleHandlerRegistration{
+		id:      id,
+		handler: handler,
+	})
+	return id
+}
+
+func (cw *ConsoleWatcher) removeHandler(id int64) {
+	cw.mu.Lock()
+	defer cw.mu.Unlock()
+
+	for i, registration := range cw.handlers {
+		if registration.id == id {
+			cw.handlers = slices.Delete(cw.handlers, i, i+1)
+			return
+		}
+	}
 }
 
 // SetLimit sets the maximum number of messages to retain.
@@ -187,13 +216,8 @@ func (cw *ConsoleWatcher) WaitForMessage(ctx context.Context, filter ConsoleFilt
 		}
 	}
 
-	cw.AddHandler(handler)
-	defer func() {
-		cw.mu.Lock()
-		// Remove handler (simple implementation - in production you'd want a handle-based removal)
-		cw.handlers = cw.handlers[:len(cw.handlers)-1]
-		cw.mu.Unlock()
-	}()
+	handlerID := cw.addHandler(handler)
+	defer cw.removeHandler(handlerID)
 
 	select {
 	case <-ctx.Done():
@@ -302,8 +326,8 @@ func (cw *ConsoleWatcher) addMessage(msg ConsoleMessage) {
 	cw.mu.Unlock()
 
 	// Call handlers
-	for _, handler := range handlers {
-		handler(msg)
+	for _, registration := range handlers {
+		registration.handler(msg)
 	}
 }
 
@@ -361,10 +385,16 @@ type ExceptionInfo struct {
 
 // ExceptionWatcher watches for JavaScript exceptions.
 type ExceptionWatcher struct {
-	mu         sync.RWMutex
-	wv         *Webview
-	exceptions []ExceptionInfo
-	handlers   []func(ExceptionInfo)
+	mu            sync.RWMutex
+	wv            *Webview
+	exceptions    []ExceptionInfo
+	handlers      []exceptionHandlerRegistration
+	nextHandlerID atomic.Int64
+}
+
+type exceptionHandlerRegistration struct {
+	id      int64
+	handler func(ExceptionInfo)
 }
 
 // NewExceptionWatcher creates a new exception watcher.
@@ -372,7 +402,7 @@ func NewExceptionWatcher(wv *Webview) *ExceptionWatcher {
 	ew := &ExceptionWatcher{
 		wv:         wv,
 		exceptions: make([]ExceptionInfo, 0),
-		handlers:   make([]func(ExceptionInfo), 0),
+		handlers:   make([]exceptionHandlerRegistration, 0),
 	}
 
 	// Subscribe to exception events
@@ -425,9 +455,30 @@ func (ew *ExceptionWatcher) Count() int {
 
 // AddHandler adds a handler for exceptions.
 func (ew *ExceptionWatcher) AddHandler(handler func(ExceptionInfo)) {
+	ew.addHandler(handler)
+}
+
+func (ew *ExceptionWatcher) addHandler(handler func(ExceptionInfo)) int64 {
 	ew.mu.Lock()
 	defer ew.mu.Unlock()
-	ew.handlers = append(ew.handlers, handler)
+	id := ew.nextHandlerID.Add(1)
+	ew.handlers = append(ew.handlers, exceptionHandlerRegistration{
+		id:      id,
+		handler: handler,
+	})
+	return id
+}
+
+func (ew *ExceptionWatcher) removeHandler(id int64) {
+	ew.mu.Lock()
+	defer ew.mu.Unlock()
+
+	for i, registration := range ew.handlers {
+		if registration.id == id {
+			ew.handlers = slices.Delete(ew.handlers, i, i+1)
+			return
+		}
+	}
 }
 
 // WaitForException waits for an exception to be thrown.
@@ -450,12 +501,8 @@ func (ew *ExceptionWatcher) WaitForException(ctx context.Context) (*ExceptionInf
 		}
 	}
 
-	ew.AddHandler(handler)
-	defer func() {
-		ew.mu.Lock()
-		ew.handlers = ew.handlers[:len(ew.handlers)-1]
-		ew.mu.Unlock()
-	}()
+	handlerID := ew.addHandler(handler)
+	defer ew.removeHandler(handlerID)
 
 	select {
 	case <-ctx.Done():
@@ -515,8 +562,8 @@ func (ew *ExceptionWatcher) handleException(params map[string]any) {
 	ew.mu.Unlock()
 
 	// Call handlers
-	for _, handler := range handlers {
-		handler(info)
+	for _, registration := range handlers {
+		registration.handler(info)
 	}
 }
 

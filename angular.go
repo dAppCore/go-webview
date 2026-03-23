@@ -1,7 +1,9 @@
+// SPDX-License-Identifier: EUPL-1.2
 package webview
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -93,6 +95,21 @@ func (ah *AngularHelper) isAngularApp(ctx context.Context) (bool, error) {
 func (ah *AngularHelper) waitForZoneStability(ctx context.Context) error {
 	script := `
 		new Promise((resolve, reject) => {
+			const pollZone = () => {
+				if (!window.Zone || !window.Zone.current) {
+					resolve(true);
+					return;
+				}
+
+				const inner = window.Zone.current._inner || window.Zone.current;
+				if (!inner._hasPendingMicrotasks && !inner._hasPendingMacrotasks) {
+					resolve(true);
+					return;
+				}
+
+				setTimeout(pollZone, 50);
+			};
+
 			// Get the root elements
 			const roots = window.getAllAngularRootElements ? window.getAllAngularRootElements() : [];
 			if (roots.length === 0) {
@@ -121,28 +138,7 @@ func (ah *AngularHelper) waitForZoneStability(ctx context.Context) error {
 			}
 
 			if (!zone) {
-				// Fallback: check window.Zone
-				if (window.Zone && window.Zone.current && window.Zone.current._inner) {
-					const isStable = !window.Zone.current._inner._hasPendingMicrotasks &&
-						!window.Zone.current._inner._hasPendingMacrotasks;
-					if (isStable) {
-						resolve(true);
-					} else {
-						// Poll for stability
-						let attempts = 0;
-						const poll = setInterval(() => {
-							attempts++;
-							const stable = !window.Zone.current._inner._hasPendingMicrotasks &&
-								!window.Zone.current._inner._hasPendingMacrotasks;
-							if (stable || attempts > 100) {
-								clearInterval(poll);
-								resolve(stable);
-							}
-						}, 50);
-					}
-				} else {
-					resolve(true);
-				}
+				pollZone();
 				return;
 			}
 
@@ -153,30 +149,28 @@ func (ah *AngularHelper) waitForZoneStability(ctx context.Context) error {
 			}
 
 			// Wait for stability
-			const sub = zone.onStable.subscribe(() => {
-				sub.unsubscribe();
-				resolve(true);
-			});
-
-			// Timeout fallback
-			setTimeout(() => {
-				sub.unsubscribe();
-				resolve(zone.isStable);
-			}, 5000);
+			try {
+				const sub = zone.onStable.subscribe(() => {
+					sub.unsubscribe();
+					resolve(true);
+				});
+			} catch (e) {
+				pollZone();
+			}
 		})
 	`
 
-	ticker := time.NewTicker(100 * time.Millisecond)
-	defer ticker.Stop()
-
-	// First evaluate the promise
-	_, err := ah.wv.evaluate(ctx, script)
+	result, err := ah.wv.evaluate(ctx, script)
 	if err != nil {
 		// If the script fails, fall back to simple polling
 		return ah.pollForStability(ctx)
 	}
 
-	return nil
+	if stable, ok := result.(bool); ok && stable {
+		return nil
+	}
+
+	return ah.pollForStability(ctx)
 }
 
 // pollForStability polls for Angular stability as a fallback.
@@ -333,18 +327,20 @@ func (ah *AngularHelper) GetComponentProperty(selector, propertyName string) (an
 	defer cancel()
 
 	script := fmt.Sprintf(`
-		(function() {
-			const element = document.querySelector(%q);
-			if (!element) {
-				throw new Error('Element not found: %s');
-			}
-			const component = window.ng.probe(element).componentInstance;
-			if (!component) {
-				throw new Error('No Angular component found on element');
-			}
-			return component[%q];
-		})()
-	`, selector, selector, propertyName)
+			(function() {
+				const selector = %s;
+				const propertyName = %s;
+				const element = document.querySelector(selector);
+				if (!element) {
+					throw new Error('Element not found: ' + selector);
+				}
+				const component = window.ng.probe(element).componentInstance;
+				if (!component) {
+					throw new Error('No Angular component found on element');
+				}
+				return component[propertyName];
+			})()
+		`, formatJSValue(selector), formatJSValue(propertyName))
 
 	return ah.wv.evaluate(ctx, script)
 }
@@ -355,26 +351,28 @@ func (ah *AngularHelper) SetComponentProperty(selector, propertyName string, val
 	defer cancel()
 
 	script := fmt.Sprintf(`
-		(function() {
-			const element = document.querySelector(%q);
-			if (!element) {
-				throw new Error('Element not found: %s');
-			}
-			const component = window.ng.probe(element).componentInstance;
-			if (!component) {
-				throw new Error('No Angular component found on element');
-			}
-			component[%q] = %v;
+			(function() {
+				const selector = %s;
+				const propertyName = %s;
+				const element = document.querySelector(selector);
+				if (!element) {
+					throw new Error('Element not found: ' + selector);
+				}
+				const component = window.ng.probe(element).componentInstance;
+				if (!component) {
+					throw new Error('No Angular component found on element');
+				}
+				component[propertyName] = %s;
 
-			// Trigger change detection
-			const injector = window.ng.probe(element).injector;
-			const appRef = injector.get(window.ng.coreTokens.ApplicationRef || 'ApplicationRef');
-			if (appRef) {
+				// Trigger change detection
+				const injector = window.ng.probe(element).injector;
+				const appRef = injector.get(window.ng.coreTokens.ApplicationRef || 'ApplicationRef');
+				if (appRef) {
 				appRef.tick();
-			}
-			return true;
-		})()
-	`, selector, selector, propertyName, formatJSValue(value))
+				}
+				return true;
+			})()
+		`, formatJSValue(selector), formatJSValue(propertyName), formatJSValue(value))
 
 	_, err := ah.wv.evaluate(ctx, script)
 	return err
@@ -394,29 +392,31 @@ func (ah *AngularHelper) CallComponentMethod(selector, methodName string, args .
 	}
 
 	script := fmt.Sprintf(`
-		(function() {
-			const element = document.querySelector(%q);
-			if (!element) {
-				throw new Error('Element not found: %s');
-			}
-			const component = window.ng.probe(element).componentInstance;
-			if (!component) {
-				throw new Error('No Angular component found on element');
-			}
-			if (typeof component[%q] !== 'function') {
-				throw new Error('Method not found: %s');
-			}
-			const result = component[%q](%s);
+			(function() {
+				const selector = %s;
+				const methodName = %s;
+				const element = document.querySelector(selector);
+				if (!element) {
+					throw new Error('Element not found: ' + selector);
+				}
+				const component = window.ng.probe(element).componentInstance;
+				if (!component) {
+					throw new Error('No Angular component found on element');
+				}
+				if (typeof component[methodName] !== 'function') {
+					throw new Error('Method not found: ' + methodName);
+				}
+				const result = component[methodName](%s);
 
-			// Trigger change detection
-			const injector = window.ng.probe(element).injector;
-			const appRef = injector.get(window.ng.coreTokens.ApplicationRef || 'ApplicationRef');
-			if (appRef) {
+				// Trigger change detection
+				const injector = window.ng.probe(element).injector;
+				const appRef = injector.get(window.ng.coreTokens.ApplicationRef || 'ApplicationRef');
+				if (appRef) {
 				appRef.tick();
-			}
-			return result;
-		})()
-	`, selector, selector, methodName, methodName, methodName, argsStr.String())
+				}
+				return result;
+			})()
+		`, formatJSValue(selector), formatJSValue(methodName), argsStr.String())
 
 	return ah.wv.evaluate(ctx, script)
 }
@@ -524,16 +524,18 @@ func (ah *AngularHelper) DispatchEvent(selector, eventName string, detail any) e
 	}
 
 	script := fmt.Sprintf(`
-		(function() {
-			const element = document.querySelector(%q);
-			if (!element) {
-				throw new Error('Element not found: %s');
-			}
-			const event = new CustomEvent(%q, { bubbles: true, detail: %s });
-			element.dispatchEvent(event);
-			return true;
-		})()
-	`, selector, selector, eventName, detailStr)
+			(function() {
+				const selector = %s;
+				const eventName = %s;
+				const element = document.querySelector(selector);
+				if (!element) {
+					throw new Error('Element not found: ' + selector);
+				}
+				const event = new CustomEvent(eventName, { bubbles: true, detail: %s });
+				element.dispatchEvent(event);
+				return true;
+			})()
+		`, formatJSValue(selector), formatJSValue(eventName), detailStr)
 
 	_, err := ah.wv.evaluate(ctx, script)
 	return err
@@ -572,17 +574,18 @@ func (ah *AngularHelper) SetNgModel(selector string, value any) error {
 	defer cancel()
 
 	script := fmt.Sprintf(`
-		(function() {
-			const element = document.querySelector(%q);
-			if (!element) {
-				throw new Error('Element not found: %s');
-			}
+			(function() {
+				const selector = %s;
+				const element = document.querySelector(selector);
+				if (!element) {
+					throw new Error('Element not found: ' + selector);
+				}
 
-			element.value = %v;
-			element.dispatchEvent(new Event('input', { bubbles: true }));
-			element.dispatchEvent(new Event('change', { bubbles: true }));
+				element.value = %s;
+				element.dispatchEvent(new Event('input', { bubbles: true }));
+				element.dispatchEvent(new Event('change', { bubbles: true }));
 
-			// Trigger change detection
+				// Trigger change detection
 			const roots = window.getAllAngularRootElements ? window.getAllAngularRootElements() : [];
 			for (const root of roots) {
 				try {
@@ -595,9 +598,9 @@ func (ah *AngularHelper) SetNgModel(selector string, value any) error {
 				} catch (e) {}
 			}
 
-			return true;
-		})()
-	`, selector, selector, formatJSValue(value))
+				return true;
+			})()
+		`, formatJSValue(selector), formatJSValue(value))
 
 	_, err := ah.wv.evaluate(ctx, script)
 	return err
@@ -613,17 +616,15 @@ func getString(m map[string]any, key string) string {
 }
 
 func formatJSValue(v any) string {
-	switch val := v.(type) {
-	case string:
-		return fmt.Sprintf("%q", val)
-	case bool:
-		if val {
-			return "true"
-		}
-		return "false"
-	case nil:
-		return "null"
-	default:
-		return fmt.Sprintf("%v", val)
+	data, err := json.Marshal(v)
+	if err == nil {
+		return string(data)
 	}
+
+	fallback, fallbackErr := json.Marshal(fmt.Sprint(v))
+	if fallbackErr == nil {
+		return string(fallback)
+	}
+
+	return "null"
 }

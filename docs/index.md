@@ -139,3 +139,4 @@ value, err := ah.GetComponentProperty("app-widget", "title")
 - [Architecture](architecture.md) -- internals, data flow, CDP protocol, type reference
 - [Development Guide](development.md) -- build, test, contribute, coding standards
 - [Project History](history.md) -- extraction origin, completed phases, known limitations
+- [Security Attack Vector Mapping](security-attack-vector-mapping.md) -- external input entry points, current validation, and attack-surface notes

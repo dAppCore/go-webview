@@ -3,9 +3,9 @@ package webview
 
 import (
 	"context"
-	"fmt"
 	"time"
 
+	core "dappco.re/go/core"
 	coreerr "dappco.re/go/core/log"
 )
 
@@ -84,7 +84,7 @@ type ScrollAction struct {
 
 // Execute performs the scroll action.
 func (a ScrollAction) Execute(ctx context.Context, wv *Webview) error {
-	script := fmt.Sprintf("window.scrollTo(%d, %d)", a.X, a.Y)
+	script := core.Sprintf("window.scrollTo(%d, %d)", a.X, a.Y)
 	_, err := wv.evaluate(ctx, script)
 	return err
 }
@@ -96,7 +96,7 @@ type ScrollIntoViewAction struct {
 
 // Execute scrolls the element into view.
 func (a ScrollIntoViewAction) Execute(ctx context.Context, wv *Webview) error {
-	script := fmt.Sprintf("document.querySelector(%q)?.scrollIntoView({behavior: 'smooth', block: 'center'})", a.Selector)
+	script := core.Sprintf("document.querySelector(%q)?.scrollIntoView({behavior: 'smooth', block: 'center'})", a.Selector)
 	_, err := wv.evaluate(ctx, script)
 	return err
 }
@@ -108,7 +108,7 @@ type FocusAction struct {
 
 // Execute focuses the element.
 func (a FocusAction) Execute(ctx context.Context, wv *Webview) error {
-	script := fmt.Sprintf("document.querySelector(%q)?.focus()", a.Selector)
+	script := core.Sprintf("document.querySelector(%q)?.focus()", a.Selector)
 	_, err := wv.evaluate(ctx, script)
 	return err
 }
@@ -120,7 +120,7 @@ type BlurAction struct {
 
 // Execute removes focus from the element.
 func (a BlurAction) Execute(ctx context.Context, wv *Webview) error {
-	script := fmt.Sprintf("document.querySelector(%q)?.blur()", a.Selector)
+	script := core.Sprintf("document.querySelector(%q)?.blur()", a.Selector)
 	_, err := wv.evaluate(ctx, script)
 	return err
 }
@@ -132,7 +132,7 @@ type ClearAction struct {
 
 // Execute clears the input value.
 func (a ClearAction) Execute(ctx context.Context, wv *Webview) error {
-	script := fmt.Sprintf(`
+	script := core.Sprintf(`
 		const el = document.querySelector(%q);
 		if (el) {
 			el.value = '';
@@ -152,7 +152,7 @@ type SelectAction struct {
 
 // Execute selects the option.
 func (a SelectAction) Execute(ctx context.Context, wv *Webview) error {
-	script := fmt.Sprintf(`
+	script := core.Sprintf(`
 		const el = document.querySelector(%q);
 		if (el) {
 			el.value = %q;
@@ -171,7 +171,7 @@ type CheckAction struct {
 
 // Execute checks/unchecks the checkbox.
 func (a CheckAction) Execute(ctx context.Context, wv *Webview) error {
-	script := fmt.Sprintf(`
+	script := core.Sprintf(`
 		const el = document.querySelector(%q);
 		if (el && el.checked !== %t) {
 			el.click();
@@ -222,7 +222,7 @@ func (a DoubleClickAction) Execute(ctx context.Context, wv *Webview) error {
 
 	if elem.BoundingBox == nil {
 		// Fallback to JavaScript
-		script := fmt.Sprintf(`
+		script := core.Sprintf(`
 			const el = document.querySelector(%q);
 			if (el) {
 				const event = new MouseEvent('dblclick', {bubbles: true, cancelable: true, view: window});
@@ -269,7 +269,7 @@ func (a RightClickAction) Execute(ctx context.Context, wv *Webview) error {
 
 	if elem.BoundingBox == nil {
 		// Fallback to JavaScript
-		script := fmt.Sprintf(`
+		script := core.Sprintf(`
 			const el = document.querySelector(%q);
 			if (el) {
 				const event = new MouseEvent('contextmenu', {bubbles: true, cancelable: true, view: window});
@@ -377,7 +377,7 @@ type SetAttributeAction struct {
 
 // Execute sets the attribute.
 func (a SetAttributeAction) Execute(ctx context.Context, wv *Webview) error {
-	script := fmt.Sprintf("document.querySelector(%q)?.setAttribute(%q, %q)", a.Selector, a.Attribute, a.Value)
+	script := core.Sprintf("document.querySelector(%q)?.setAttribute(%q, %q)", a.Selector, a.Attribute, a.Value)
 	_, err := wv.evaluate(ctx, script)
 	return err
 }
@@ -390,7 +390,7 @@ type RemoveAttributeAction struct {
 
 // Execute removes the attribute.
 func (a RemoveAttributeAction) Execute(ctx context.Context, wv *Webview) error {
-	script := fmt.Sprintf("document.querySelector(%q)?.removeAttribute(%q)", a.Selector, a.Attribute)
+	script := core.Sprintf("document.querySelector(%q)?.removeAttribute(%q)", a.Selector, a.Attribute)
 	_, err := wv.evaluate(ctx, script)
 	return err
 }
@@ -403,7 +403,7 @@ type SetValueAction struct {
 
 // Execute sets the value.
 func (a SetValueAction) Execute(ctx context.Context, wv *Webview) error {
-	script := fmt.Sprintf(`
+	script := core.Sprintf(`
 		const el = document.querySelector(%q);
 		if (el) {
 			el.value = %q;
@@ -462,7 +462,7 @@ func (s *ActionSequence) WaitForSelector(selector string) *ActionSequence {
 func (s *ActionSequence) Execute(ctx context.Context, wv *Webview) error {
 	for i, action := range s.actions {
 		if err := action.Execute(ctx, wv); err != nil {
-			return coreerr.E("ActionSequence.Execute", fmt.Sprintf("action %d failed", i), err)
+			return coreerr.E("ActionSequence.Execute", core.Sprintf("action %d failed", i), err)
 		}
 	}
 	return nil

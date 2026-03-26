@@ -4,14 +4,14 @@ package webview
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	core "dappco.re/go/core"
 
 	"github.com/gorilla/websocket"
 )
@@ -78,7 +78,7 @@ func (s *fakeCDPServer) addTarget(id string) *fakeCDPTarget {
 func (s *fakeCDPServer) newTarget() *fakeCDPTarget {
 	s.mu.Lock()
 	s.nextTarget++
-	id := fmt.Sprintf("target-%d", s.nextTarget+1)
+	id := core.Sprintf("target-%d", s.nextTarget+1)
 	s.mu.Unlock()
 
 	return s.addTarget(id)
@@ -100,8 +100,8 @@ func (s *fakeCDPServer) handle(w http.ResponseWriter, r *http.Request) {
 		s.writeJSON(w, map[string]string{
 			"Browser": "Chrome/123.0",
 		})
-	case strings.HasPrefix(r.URL.Path, "/devtools/page/"):
-		s.handleWebSocket(w, r, strings.TrimPrefix(r.URL.Path, "/devtools/page/"))
+	case core.HasPrefix(r.URL.Path, "/devtools/page/"):
+		s.handleWebSocket(w, r, core.TrimPrefix(r.URL.Path, "/devtools/page/"))
 	default:
 		http.NotFound(w, r)
 	}
@@ -209,7 +209,7 @@ func (tgt *fakeCDPTarget) readLoop() {
 		}
 
 		var msg cdpMessage
-		if err := json.Unmarshal(data, &msg); err != nil {
+		if r := core.JSONUnmarshal(data, &msg); !r.OK {
 			continue
 		}
 
@@ -451,7 +451,7 @@ func TestNewCDPClient_Bad_RejectsCrossHostWebSocket(t *testing.T) {
 	if err == nil {
 		t.Fatal("NewCDPClient succeeded with a cross-host WebSocket URL")
 	}
-	if !strings.Contains(err.Error(), "invalid target WebSocket URL") {
+	if !core.Contains(err.Error(), "invalid target WebSocket URL") {
 		t.Fatalf("NewCDPClient error = %v, want cross-host WebSocket validation failure", err)
 	}
 }
@@ -543,13 +543,13 @@ func TestAngularHelperSetNgModel_Good_EscapesSelectorAndValue(t *testing.T) {
 	}
 
 	expression, _ := target.waitForMessage(t).Params["expression"].(string)
-	if !strings.Contains(expression, "const selector = "+formatJSValue(selector)+";") {
+	if !core.Contains(expression, "const selector = "+formatJSValue(selector)+";") {
 		t.Fatalf("expression did not contain safely quoted selector: %s", expression)
 	}
-	if !strings.Contains(expression, "element.value = "+formatJSValue(value)+";") {
+	if !core.Contains(expression, "element.value = "+formatJSValue(value)+";") {
 		t.Fatalf("expression did not contain safely quoted value: %s", expression)
 	}
-	if strings.Contains(expression, "throw new Error('Element not found: "+selector+"')") {
+	if core.Contains(expression, "throw new Error('Element not found: "+selector+"')") {
 		t.Fatalf("expression still embedded selector directly in error text: %s", expression)
 	}
 }

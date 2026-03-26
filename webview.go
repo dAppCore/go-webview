@@ -25,13 +25,12 @@ package webview
 import (
 	"context"
 	"encoding/base64"
-	"fmt"
 	"iter"
 	"slices"
-	"strings"
 	"sync"
 	"time"
 
+	core "dappco.re/go/core"
 	coreerr "dappco.re/go/core/log"
 )
 
@@ -337,7 +336,7 @@ func (wv *Webview) GetHTML(selector string) (string, error) {
 	if selector == "" {
 		script = "document.documentElement.outerHTML"
 	} else {
-		script = fmt.Sprintf("document.querySelector(%q)?.outerHTML || ''", selector)
+		script = core.Sprintf("document.querySelector(%q)?.outerHTML || ''", selector)
 	}
 
 	result, err := wv.evaluate(ctx, script)
@@ -463,14 +462,14 @@ func (wv *Webview) handleConsoleEvent(params map[string]any) {
 
 	// Extract args
 	args, _ := params["args"].([]any)
-	var text strings.Builder
+	text := core.NewBuilder()
 	for i, arg := range args {
 		if argMap, ok := arg.(map[string]any); ok {
 			if val, ok := argMap["value"]; ok {
 				if i > 0 {
 					text.WriteString(" ")
 				}
-				text.WriteString(fmt.Sprint(val))
+				text.WriteString(core.Sprint(val))
 			}
 		}
 	}
@@ -526,7 +525,7 @@ func (wv *Webview) waitForSelector(ctx context.Context, selector string) error {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
-	script := fmt.Sprintf("!!document.querySelector(%q)", selector)
+	script := core.Sprintf("!!document.querySelector(%q)", selector)
 
 	for {
 		select {
@@ -719,7 +718,7 @@ func (wv *Webview) click(ctx context.Context, selector string) error {
 
 	if elem.BoundingBox == nil {
 		// Fallback to JavaScript click
-		script := fmt.Sprintf("document.querySelector(%q)?.click()", selector)
+		script := core.Sprintf("document.querySelector(%q)?.click()", selector)
 		_, err := wv.evaluate(ctx, script)
 		return err
 	}
@@ -748,7 +747,7 @@ func (wv *Webview) click(ctx context.Context, selector string) error {
 // typeText types text into an element.
 func (wv *Webview) typeText(ctx context.Context, selector, text string) error {
 	// Focus the element first
-	script := fmt.Sprintf("document.querySelector(%q)?.focus()", selector)
+	script := core.Sprintf("document.querySelector(%q)?.focus()", selector)
 	_, err := wv.evaluate(ctx, script)
 	if err != nil {
 		return coreerr.E("Webview.typeText", "failed to focus element", err)

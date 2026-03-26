@@ -3,13 +3,13 @@ package webview
 
 import (
 	"context"
-	"fmt"
 	"iter"
 	"slices"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	core "dappco.re/go/core"
 )
 
 // ConsoleWatcher provides advanced console message watching capabilities.
@@ -272,14 +272,14 @@ func (cw *ConsoleWatcher) handleConsoleEvent(params map[string]any) {
 
 	// Extract args
 	args, _ := params["args"].([]any)
-	var text strings.Builder
+	text := core.NewBuilder()
 	for i, arg := range args {
 		if argMap, ok := arg.(map[string]any); ok {
 			if val, ok := argMap["value"]; ok {
 				if i > 0 {
 					text.WriteString(" ")
 				}
-				text.WriteString(fmt.Sprint(val))
+				text.WriteString(core.Sprint(val))
 			}
 		}
 	}
@@ -525,7 +525,7 @@ func (ew *ExceptionWatcher) handleException(params map[string]any) {
 	url, _ := exceptionDetails["url"].(string)
 
 	// Extract stack trace
-	var stackTrace strings.Builder
+	stackTrace := core.NewBuilder()
 	if st, ok := exceptionDetails["stackTrace"].(map[string]any); ok {
 		if frames, ok := st["callFrames"].([]any); ok {
 			for _, f := range frames {
@@ -534,7 +534,7 @@ func (ew *ExceptionWatcher) handleException(params map[string]any) {
 					frameURL, _ := frame["url"].(string)
 					frameLine, _ := frame["lineNumber"].(float64)
 					frameCol, _ := frame["columnNumber"].(float64)
-					stackTrace.WriteString(fmt.Sprintf("  at %s (%s:%d:%d)\n", funcName, frameURL, int(frameLine), int(frameCol)))
+					stackTrace.WriteString(core.Sprintf("  at %s (%s:%d:%d)\n", funcName, frameURL, int(frameLine), int(frameCol)))
 				}
 			}
 		}
@@ -569,7 +569,7 @@ func (ew *ExceptionWatcher) handleException(params map[string]any) {
 
 // FormatConsoleOutput formats console messages for display.
 func FormatConsoleOutput(messages []ConsoleMessage) string {
-	var output strings.Builder
+	output := core.NewBuilder()
 	for _, msg := range messages {
 		prefix := ""
 		switch msg.Type {
@@ -585,7 +585,7 @@ func FormatConsoleOutput(messages []ConsoleMessage) string {
 			prefix = "[LOG]"
 		}
 		timestamp := msg.Timestamp.Format("15:04:05.000")
-		output.WriteString(fmt.Sprintf("%s %s %s\n", timestamp, prefix, msg.Text))
+		output.WriteString(core.Sprintf("%s %s %s\n", timestamp, prefix, msg.Text))
 	}
 	return output.String()
 }

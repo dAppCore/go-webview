@@ -3,8 +3,6 @@ package webview
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"io"
 	"iter"
 	"net"
@@ -17,9 +15,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/gorilla/websocket"
-
+	core "dappco.re/go/core"
 	coreerr "dappco.re/go/core/log"
+
+	"github.com/gorilla/websocket"
 )
 
 const debugEndpointTimeout = 10 * time.Second
@@ -31,7 +30,7 @@ var (
 			return http.ErrUseLastResponse
 		},
 	}
-	errCDPClientClosed = errors.New("cdp client closed")
+	errCDPClientClosed = core.NewError("cdp client closed")
 )
 
 // CDPClient handles communication with Chrome DevTools Protocol via WebSocket.
@@ -225,7 +224,7 @@ func (c *CDPClient) readLoop() {
 			}
 
 			var netErr net.Error
-			if errors.As(err, &netErr) && netErr.Timeout() {
+			if core.As(err, &netErr) && netErr.Timeout() {
 				continue
 			}
 
@@ -235,7 +234,7 @@ func (c *CDPClient) readLoop() {
 
 		// Try to parse as response
 		var resp cdpResponse
-		if err := json.Unmarshal(data, &resp); err == nil && resp.ID > 0 {
+		if r := core.JSONUnmarshal(data, &resp); r.OK && resp.ID > 0 {
 			c.pendMu.Lock()
 			if ch, ok := c.pending[resp.ID]; ok {
 				respCopy := resp
@@ -250,7 +249,7 @@ func (c *CDPClient) readLoop() {
 
 		// Try to parse as event
 		var event cdpEvent
-		if err := json.Unmarshal(data, &event); err == nil && event.Method != "" {
+		if r := core.JSONUnmarshal(data, &event); r.OK && event.Method != "" {
 			c.dispatchEvent(event.Method, event.Params)
 		}
 	}
@@ -392,8 +391,8 @@ func GetVersion(debugURL string) (map[string]string, error) {
 	}
 
 	var version map[string]string
-	if err := json.Unmarshal(body, &version); err != nil {
-		return nil, coreerr.E("GetVersion", "failed to parse version", err)
+	if r := core.JSONUnmarshal(body, &version); !r.OK {
+		return nil, coreerr.E("GetVersion", "failed to parse version", nil)
 	}
 
 	return version, nil
@@ -447,7 +446,7 @@ func parseDebugURL(raw string) (*url.URL, error) {
 }
 
 func canonicalDebugURL(debugURL *url.URL) string {
-	return strings.TrimSuffix(debugURL.String(), "/")
+	return core.TrimSuffix(debugURL.String(), "/")
 }
 
 func doDebugRequest(ctx context.Context, debugBase *url.URL, endpoint, rawQuery string) ([]byte, error) {
@@ -486,8 +485,8 @@ func listTargetsAt(ctx context.Context, debugBase *url.URL) ([]TargetInfo, error
 	}
 
 	var targets []TargetInfo
-	if err := json.Unmarshal(body, &targets); err != nil {
-		return nil, err
+	if r := core.JSONUnmarshal(body, &targets); !r.OK {
+		return nil, coreerr.E("CDPClient.listTargetsAt", "failed to parse targets", nil)
 	}
 
 	return targets, nil
@@ -505,8 +504,8 @@ func createTargetAt(ctx context.Context, debugBase *url.URL, pageURL string) (*T
 	}
 
 	var target TargetInfo
-	if err := json.Unmarshal(body, &target); err != nil {
-		return nil, err
+	if r := core.JSONUnmarshal(body, &target); !r.OK {
+		return nil, coreerr.E("CDPClient.createTargetAt", "failed to parse target", nil)
 	}
 
 	return &target, nil
@@ -551,7 +550,7 @@ func targetIDFromWebSocketURL(raw string) (string, error) {
 		return "", err
 	}
 
-	targetID := path.Base(strings.TrimSuffix(wsURL.Path, "/"))
+	targetID := path.Base(core.TrimSuffix(wsURL.Path, "/"))
 	if targetID == "." || targetID == "/" || targetID == "" {
 		return "", coreerr.E("CDPClient.targetIDFromWebSocketURL", "missing target ID in WebSocket URL", nil)
 	}
@@ -595,11 +594,11 @@ func isTerminalReadError(err error) bool {
 	if err == nil {
 		return false
 	}
-	if errors.Is(err, net.ErrClosed) || errors.Is(err, websocket.ErrCloseSent) {
+	if core.Is(err, net.ErrClosed) || core.Is(err, websocket.ErrCloseSent) {
 		return true
 	}
 	var closeErr *websocket.CloseError
-	return errors.As(err, &closeErr)
+	return core.As(err, &closeErr)
 }
 
 func cloneMapAny(src map[string]any) map[string]any {

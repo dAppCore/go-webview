@@ -3,11 +3,9 @@ package webview
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
-	"strings"
 	"time"
 
+	core "dappco.re/go/core"
 	coreerr "dappco.re/go/core/log"
 )
 
@@ -209,7 +207,7 @@ func (ah *AngularHelper) NavigateByRouter(path string) error {
 	ctx, cancel := context.WithTimeout(ah.wv.ctx, ah.timeout)
 	defer cancel()
 
-	script := fmt.Sprintf(`
+	script := core.Sprintf(`
 		(function() {
 			const roots = window.getAllAngularRootElements ? window.getAllAngularRootElements() : [];
 			if (roots.length === 0) {
@@ -326,7 +324,7 @@ func (ah *AngularHelper) GetComponentProperty(selector, propertyName string) (an
 	ctx, cancel := context.WithTimeout(ah.wv.ctx, ah.timeout)
 	defer cancel()
 
-	script := fmt.Sprintf(`
+	script := core.Sprintf(`
 			(function() {
 				const selector = %s;
 				const propertyName = %s;
@@ -350,7 +348,7 @@ func (ah *AngularHelper) SetComponentProperty(selector, propertyName string, val
 	ctx, cancel := context.WithTimeout(ah.wv.ctx, ah.timeout)
 	defer cancel()
 
-	script := fmt.Sprintf(`
+	script := core.Sprintf(`
 			(function() {
 				const selector = %s;
 				const propertyName = %s;
@@ -383,7 +381,7 @@ func (ah *AngularHelper) CallComponentMethod(selector, methodName string, args .
 	ctx, cancel := context.WithTimeout(ah.wv.ctx, ah.timeout)
 	defer cancel()
 
-	var argsStr strings.Builder
+	argsStr := core.NewBuilder()
 	for i, arg := range args {
 		if i > 0 {
 			argsStr.WriteString(", ")
@@ -391,7 +389,7 @@ func (ah *AngularHelper) CallComponentMethod(selector, methodName string, args .
 		argsStr.WriteString(formatJSValue(arg))
 	}
 
-	script := fmt.Sprintf(`
+	script := core.Sprintf(`
 			(function() {
 				const selector = %s;
 				const methodName = %s;
@@ -454,7 +452,7 @@ func (ah *AngularHelper) GetService(serviceName string) (any, error) {
 	ctx, cancel := context.WithTimeout(ah.wv.ctx, ah.timeout)
 	defer cancel()
 
-	script := fmt.Sprintf(`
+	script := core.Sprintf(`
 		(function() {
 			const roots = window.getAllAngularRootElements ? window.getAllAngularRootElements() : [];
 			for (const root of roots) {
@@ -481,7 +479,7 @@ func (ah *AngularHelper) WaitForComponent(selector string) error {
 	ctx, cancel := context.WithTimeout(ah.wv.ctx, ah.timeout)
 	defer cancel()
 
-	script := fmt.Sprintf(`
+	script := core.Sprintf(`
 		(function() {
 			const element = document.querySelector(%q);
 			if (!element) return false;
@@ -523,7 +521,7 @@ func (ah *AngularHelper) DispatchEvent(selector, eventName string, detail any) e
 		detailStr = formatJSValue(detail)
 	}
 
-	script := fmt.Sprintf(`
+	script := core.Sprintf(`
 			(function() {
 				const selector = %s;
 				const eventName = %s;
@@ -546,7 +544,7 @@ func (ah *AngularHelper) GetNgModel(selector string) (any, error) {
 	ctx, cancel := context.WithTimeout(ah.wv.ctx, ah.timeout)
 	defer cancel()
 
-	script := fmt.Sprintf(`
+	script := core.Sprintf(`
 		(function() {
 			const element = document.querySelector(%q);
 			if (!element) return null;
@@ -573,7 +571,7 @@ func (ah *AngularHelper) SetNgModel(selector string, value any) error {
 	ctx, cancel := context.WithTimeout(ah.wv.ctx, ah.timeout)
 	defer cancel()
 
-	script := fmt.Sprintf(`
+	script := core.Sprintf(`
 			(function() {
 				const selector = %s;
 				const element = document.querySelector(selector);
@@ -616,14 +614,14 @@ func getString(m map[string]any, key string) string {
 }
 
 func formatJSValue(v any) string {
-	data, err := json.Marshal(v)
-	if err == nil {
-		return string(data)
+	r := core.JSONMarshal(v)
+	if r.OK {
+		return string(r.Value.([]byte))
 	}
 
-	fallback, fallbackErr := json.Marshal(fmt.Sprint(v))
-	if fallbackErr == nil {
-		return string(fallback)
+	r = core.JSONMarshal(core.Sprint(v))
+	if r.OK {
+		return string(r.Value.([]byte))
 	}
 
 	return "null"

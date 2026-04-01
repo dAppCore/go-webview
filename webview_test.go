@@ -458,6 +458,26 @@ func TestGetString_Good(t *testing.T) {
 	}
 }
 
+// TestParseElementContent_Good verifies inner content extraction from CDP output.
+func TestParseElementContent_Good(t *testing.T) {
+	result := map[string]any{
+		"result": map[string]any{
+			"value": map[string]any{
+				"innerHTML": "<span>Hello</span>",
+				"innerText": "Hello",
+			},
+		},
+	}
+
+	innerHTML, innerText := parseElementContent(result)
+	if innerHTML != "<span>Hello</span>" {
+		t.Fatalf("parseElementContent innerHTML = %q, want %q", innerHTML, "<span>Hello</span>")
+	}
+	if innerText != "Hello" {
+		t.Fatalf("parseElementContent innerText = %q, want %q", innerText, "Hello")
+	}
+}
+
 // TestWaitAction_Good_ContextCancelled verifies WaitAction respects context cancellation.
 func TestWaitAction_Good_ContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())

@@ -679,6 +679,8 @@ func (wv *Webview) getElementInfo(ctx context.Context, nodeID int) (*ElementInfo
 		}
 	}
 
+	innerHTML, innerText := wv.getElementContent(ctx, nodeID)
+
 	// Get bounding box
 	var box *BoundingBox
 	if boxResult, err := wv.client.Call(ctx, "DOM.getBoxModel", map[string]any{
@@ -704,8 +706,59 @@ func (wv *Webview) getElementInfo(ctx context.Context, nodeID int) (*ElementInfo
 		NodeID:      nodeID,
 		TagName:     tagName,
 		Attributes:  attrs,
+		InnerHTML:   innerHTML,
+		InnerText:   innerText,
 		BoundingBox: box,
 	}, nil
+}
+
+// getElementContent retrieves the element's inner HTML and inner text.
+func (wv *Webview) getElementContent(ctx context.Context, nodeID int) (string, string) {
+	resolveResult, err := wv.client.Call(ctx, "DOM.resolveNode", map[string]any{
+		"nodeId": nodeID,
+	})
+	if err != nil {
+		return "", ""
+	}
+
+	object, ok := resolveResult["object"].(map[string]any)
+	if !ok {
+		return "", ""
+	}
+
+	objectID, ok := object["objectId"].(string)
+	if !ok || objectID == "" {
+		return "", ""
+	}
+
+	callResult, err := wv.client.Call(ctx, "Runtime.callFunctionOn", map[string]any{
+		"objectId":            objectID,
+		"functionDeclaration": "function() { return { innerHTML: this.innerHTML || '', innerText: this.innerText || '' }; }",
+		"returnByValue":       true,
+		"awaitPromise":        true,
+	})
+	if err != nil {
+		return "", ""
+	}
+
+	return parseElementContent(callResult)
+}
+
+// parseElementContent extracts inner HTML and inner text from a CDP response.
+func parseElementContent(result map[string]any) (string, string) {
+	resultObj, ok := result["result"].(map[string]any)
+	if !ok {
+		return "", ""
+	}
+
+	value, ok := resultObj["value"].(map[string]any)
+	if !ok {
+		return "", ""
+	}
+
+	innerHTML, _ := value["innerHTML"].(string)
+	innerText, _ := value["innerText"].(string)
+	return innerHTML, innerText
 }
 
 // click performs a click on an element.

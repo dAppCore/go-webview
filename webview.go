@@ -114,7 +114,7 @@ func New(opts ...Option) (*Webview, error) {
 		ctx:          ctx,
 		cancel:       cancel,
 		timeout:      30 * time.Second,
-		consoleLogs:  make([]ConsoleMessage, 0, 100),
+		consoleLogs:  make([]ConsoleMessage, 0, 1000),
 		consoleLimit: 1000,
 	}
 

@@ -41,7 +41,7 @@ type consoleHandlerRegistration struct {
 func NewConsoleWatcher(wv *Webview) *ConsoleWatcher {
 	cw := &ConsoleWatcher{
 		wv:       wv,
-		messages: make([]ConsoleMessage, 0, 100),
+		messages: make([]ConsoleMessage, 0, 1000),
 		filters:  make([]ConsoleFilter, 0),
 		limit:    1000,
 		handlers: make([]consoleHandlerRegistration, 0),

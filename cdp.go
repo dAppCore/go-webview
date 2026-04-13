@@ -3,14 +3,12 @@ package webview
 
 import (
 	"context"
-	"io"
 	"iter"
 	"net"
 	"net/http"
 	"net/url"
 	"path"
 	"slices"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -467,15 +465,15 @@ func doDebugRequest(ctx context.Context, debugBase *url.URL, endpoint, rawQuery 
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
+	r := core.ReadAll(resp.Body)
+	if !r.OK {
+		return nil, r.Value.(error)
 	}
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return nil, coreerr.E("CDPClient.doDebugRequest", "debug endpoint returned "+resp.Status, nil)
 	}
 
-	return body, nil
+	return []byte(r.Value.(string)), nil
 }
 
 func listTargetsAt(ctx context.Context, debugBase *url.URL) ([]TargetInfo, error) {
@@ -526,7 +524,7 @@ func validateTargetWebSocketURL(debugBase *url.URL, raw string) (string, error) 
 }
 
 func sameEndpointHost(httpURL, wsURL *url.URL) bool {
-	return strings.EqualFold(httpURL.Hostname(), wsURL.Hostname()) && normalisedPort(httpURL) == normalisedPort(wsURL)
+	return core.Lower(httpURL.Hostname()) == core.Lower(wsURL.Hostname()) && normalisedPort(httpURL) == normalisedPort(wsURL)
 }
 
 func normalisedPort(u *url.URL) string {

@@ -5,6 +5,7 @@ import (
 	"context"
 	"iter"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -53,6 +54,93 @@ func NewConsoleWatcher(wv *Webview) *ConsoleWatcher {
 	})
 
 	return cw
+}
+
+// normalizeConsoleType converts CDP event types to package-level values.
+func normalizeConsoleType(raw string) string {
+	normalized := strings.ToLower(core.Trim(core.Sprint(raw)))
+	switch normalized {
+	case "warning":
+		return "warn"
+	default:
+		return normalized
+	}
+}
+
+// consoleTextFromArgs extracts message text from Runtime.consoleAPICalled args.
+func consoleTextFromArgs(args []any) string {
+	text := core.NewBuilder()
+	for i, arg := range args {
+		if i > 0 {
+			text.WriteString(" ")
+		}
+		text.WriteString(consoleArgText(arg))
+	}
+
+	return text.String()
+}
+
+func consoleArgText(arg any) string {
+	remoteObj, ok := arg.(map[string]any)
+	if !ok {
+		return consoleValueToString(arg)
+	}
+
+	if value, ok := remoteObj["value"]; ok {
+		return consoleValueToString(value)
+	}
+
+	if desc, ok := remoteObj["description"].(string); ok && desc != "" {
+		return desc
+	}
+
+	if preview, ok := remoteObj["preview"].(map[string]any); ok {
+		if description, ok := preview["description"].(string); ok && description != "" {
+			return description
+		}
+	}
+
+	if preview, ok := remoteObj["preview"].(map[string]any); ok {
+		if value, ok := preview["value"].(string); ok && value != "" {
+			return value
+		}
+	}
+
+	if r := core.JSONMarshal(remoteObj); r.OK {
+		if encoded, ok := r.Value.([]byte); ok {
+			return string(encoded)
+		}
+	}
+
+	return ""
+}
+
+func consoleValueToString(value any) string {
+	if value == nil {
+		return "null"
+	}
+	if valueStr, ok := value.(string); ok {
+		return valueStr
+	}
+
+	if r := core.JSONMarshal(value); r.OK {
+		if encoded, ok := r.Value.([]byte); ok {
+			return string(encoded)
+		}
+	}
+
+	return core.Sprint(value)
+}
+
+func consoleMessageTimestamp(params map[string]any) time.Time {
+	timestamp, ok := params["timestamp"].(float64)
+	if !ok {
+		return time.Now()
+	}
+
+	seconds := int64(timestamp)
+	nanoseconds := int64((timestamp - float64(seconds)) * float64(time.Second))
+	return time.Unix(seconds, nanoseconds).UTC()
 }
 
 // AddFilter adds a filter to the watcher.
@@ -156,7 +244,7 @@ func (cw *ConsoleWatcher) ErrorsAll() iter.Seq[ConsoleMessage] {
 		defer cw.mu.RUnlock()
 
 		for _, msg := range cw.messages {
-			if msg.Type == "error" {
+			if normalizeConsoleType(msg.Type) == "error" {
 				if !yield(msg) {
 					return
 				}
@@ -177,7 +265,7 @@ func (cw *ConsoleWatcher) WarningsAll() iter.Seq[ConsoleMessage] {
 		defer cw.mu.RUnlock()
 
 		for _, msg := range cw.messages {
-			if msg.Type == "warning" {
+			if normalizeConsoleType(msg.Type) == "warn" {
 				if !yield(msg) {
 					return
 				}
@@ -268,21 +356,11 @@ func (cw *ConsoleWatcher) ErrorCount() int {
 
 // handleConsoleEvent processes incoming console events.
 func (cw *ConsoleWatcher) handleConsoleEvent(params map[string]any) {
-	msgType, _ := params["type"].(string)
+	msgType := normalizeConsoleType(core.Sprint(params["type"]))
 
 	// Extract args
 	args, _ := params["args"].([]any)
-	text := core.NewBuilder()
-	for i, arg := range args {
-		if argMap, ok := arg.(map[string]any); ok {
-			if val, ok := argMap["value"]; ok {
-				if i > 0 {
-					text.WriteString(" ")
-				}
-				text.WriteString(core.Sprint(val))
-			}
-		}
-	}
+	text := consoleTextFromArgs(args)
 
 	// Extract stack trace info
 	stackTrace, _ := params["stackTrace"].(map[string]any)
@@ -300,8 +378,8 @@ func (cw *ConsoleWatcher) handleConsoleEvent(params map[string]any) {
 
 	msg := ConsoleMessage{
 		Type:      msgType,
-		Text:      text.String(),
-		Timestamp: time.Now(),
+		Text:      text,
+		Timestamp: consoleMessageTimestamp(params),
 		URL:       url,
 		Line:      line,
 		Column:    column,
@@ -346,7 +424,7 @@ func (cw *ConsoleWatcher) matchesFilter(msg ConsoleMessage) bool {
 
 // matchesSingleFilter checks if a message matches a specific filter.
 func (cw *ConsoleWatcher) matchesSingleFilter(msg ConsoleMessage, filter ConsoleFilter) bool {
-	if filter.Type != "" && msg.Type != filter.Type {
+	if filter.Type != "" && msg.Type != normalizeConsoleType(filter.Type) {
 		return false
 	}
 	if filter.Pattern != "" {
@@ -572,10 +650,10 @@ func FormatConsoleOutput(messages []ConsoleMessage) string {
 	output := core.NewBuilder()
 	for _, msg := range messages {
 		prefix := ""
-		switch msg.Type {
+		switch normalizeConsoleType(msg.Type) {
 		case "error":
 			prefix = "[ERROR]"
-		case "warning":
+		case "warn":
 			prefix = "[WARN]"
 		case "info":
 			prefix = "[INFO]"

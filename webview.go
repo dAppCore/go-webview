@@ -363,6 +363,10 @@ func (wv *Webview) SetViewport(width, height int) error {
 		"deviceScaleFactor": 1,
 		"mobile":            false,
 	})
+	if err != nil {
+		return coreerr.E("Webview.SetViewport", "failed to set viewport", err)
+	}
+
 	return err
 }
 
@@ -374,6 +378,10 @@ func (wv *Webview) SetUserAgent(userAgent string) error {
 	_, err := wv.client.Call(ctx, "Emulation.setUserAgentOverride", map[string]any{
 		"userAgent": userAgent,
 	})
+	if err != nil {
+		return coreerr.E("Webview.SetUserAgent", "failed to set user agent", err)
+	}
+
 	return err
 }
 
@@ -398,6 +406,10 @@ func (wv *Webview) GoBack() error {
 	_, err := wv.client.Call(ctx, "Page.goBackOrForward", map[string]any{
 		"delta": -1,
 	})
+	if err != nil {
+		return coreerr.E("Webview.GoBack", "failed to go back", err)
+	}
+
 	return err
 }
 
@@ -409,6 +421,10 @@ func (wv *Webview) GoForward() error {
 	_, err := wv.client.Call(ctx, "Page.goBackOrForward", map[string]any{
 		"delta": 1,
 	})
+	if err != nil {
+		return coreerr.E("Webview.GoForward", "failed to go forward", err)
+	}
+
 	return err
 }
 
@@ -458,21 +474,11 @@ func (wv *Webview) enableConsole() error {
 
 // handleConsoleEvent processes console API events.
 func (wv *Webview) handleConsoleEvent(params map[string]any) {
-	msgType, _ := params["type"].(string)
+	msgType := normalizeConsoleType(core.Sprint(params["type"]))
 
 	// Extract args
 	args, _ := params["args"].([]any)
-	text := core.NewBuilder()
-	for i, arg := range args {
-		if argMap, ok := arg.(map[string]any); ok {
-			if val, ok := argMap["value"]; ok {
-				if i > 0 {
-					text.WriteString(" ")
-				}
-				text.WriteString(core.Sprint(val))
-			}
-		}
-	}
+	text := consoleTextFromArgs(args)
 
 	// Extract stack trace info
 	stackTrace, _ := params["stackTrace"].(map[string]any)
@@ -490,8 +496,8 @@ func (wv *Webview) handleConsoleEvent(params map[string]any) {
 
 	wv.addConsoleMessage(ConsoleMessage{
 		Type:      msgType,
-		Text:      text.String(),
-		Timestamp: time.Now(),
+		Text:      text,
+		Timestamp: consoleMessageTimestamp(params),
 		URL:       url,
 		Line:      line,
 		Column:    column,

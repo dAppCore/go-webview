@@ -286,27 +286,12 @@ func (ah *AngularHelper) GetRouterState() (*AngularRouterState, error) {
 		URL: getString(resultMap, "url"),
 	}
 
-	if fragment, ok := resultMap["fragment"].(string); ok {
-		state.Fragment = fragment
+	if fragment, ok := resultMap["fragment"]; ok && fragment != nil {
+		state.Fragment = core.Sprint(fragment)
 	}
 
-	if params, ok := resultMap["params"].(map[string]any); ok {
-		state.Params = make(map[string]string)
-		for k, v := range params {
-			if s, ok := v.(string); ok {
-				state.Params[k] = s
-			}
-		}
-	}
-
-	if queryParams, ok := resultMap["queryParams"].(map[string]any); ok {
-		state.QueryParams = make(map[string]string)
-		for k, v := range queryParams {
-			if s, ok := v.(string); ok {
-				state.QueryParams[k] = s
-			}
-		}
-	}
+	state.Params = stringifyMap(resultMap["params"])
+	state.QueryParams = stringifyMap(resultMap["queryParams"])
 
 	return state, nil
 }
@@ -611,6 +596,25 @@ func getString(m map[string]any, key string) string {
 		return v
 	}
 	return ""
+}
+
+func stringifyMap(value any) map[string]string {
+	switch typed := value.(type) {
+	case map[string]any:
+		result := make(map[string]string, len(typed))
+		for key, item := range typed {
+			result[key] = core.Sprint(item)
+		}
+		return result
+	case map[string]string:
+		result := make(map[string]string, len(typed))
+		for key, item := range typed {
+			result[key] = item
+		}
+		return result
+	default:
+		return nil
+	}
 }
 
 func formatJSValue(v any) string {

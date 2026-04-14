@@ -101,6 +101,9 @@ func WithTimeout(d time.Duration) Option {
 // Default is 1000.
 func WithConsoleLimit(limit int) Option {
 	return func(wv *Webview) error {
+		if limit < 0 {
+			limit = 0
+		}
 		wv.consoleLimit = limit
 		return nil
 	}
@@ -400,32 +403,56 @@ func (wv *Webview) Reload() error {
 
 // GoBack navigates back in history.
 func (wv *Webview) GoBack() error {
-	ctx, cancel := context.WithTimeout(wv.ctx, wv.timeout)
-	defer cancel()
-
-	_, err := wv.client.Call(ctx, "Page.goBackOrForward", map[string]any{
-		"delta": -1,
-	})
-	if err != nil {
-		return coreerr.E("Webview.GoBack", "failed to go back", err)
-	}
-
-	return err
+	return wv.navigateHistory(-1, "Webview.GoBack")
 }
 
 // GoForward navigates forward in history.
 func (wv *Webview) GoForward() error {
+	return wv.navigateHistory(1, "Webview.GoForward")
+}
+
+func (wv *Webview) navigateHistory(delta int, scope string) error {
 	ctx, cancel := context.WithTimeout(wv.ctx, wv.timeout)
 	defer cancel()
 
-	_, err := wv.client.Call(ctx, "Page.goBackOrForward", map[string]any{
-		"delta": 1,
-	})
+	result, err := wv.client.Call(ctx, "Page.getNavigationHistory", nil)
 	if err != nil {
-		return coreerr.E("Webview.GoForward", "failed to go forward", err)
+		return coreerr.E(scope, "failed to get navigation history", err)
 	}
 
-	return err
+	currentIndex, ok := result["currentIndex"].(float64)
+	if !ok {
+		return coreerr.E(scope, "invalid navigation history index", nil)
+	}
+
+	entries, ok := result["entries"].([]any)
+	if !ok {
+		return coreerr.E(scope, "invalid navigation history entries", nil)
+	}
+
+	targetIndex := int(currentIndex) + delta
+	if targetIndex < 0 || targetIndex >= len(entries) {
+		return coreerr.E(scope, "no history entry available", nil)
+	}
+
+	entry, ok := entries[targetIndex].(map[string]any)
+	if !ok {
+		return coreerr.E(scope, "invalid navigation history entry", nil)
+	}
+
+	entryID, ok := entry["id"].(float64)
+	if !ok {
+		return coreerr.E(scope, "invalid navigation history entry ID", nil)
+	}
+
+	_, err = wv.client.Call(ctx, "Page.navigateToHistoryEntry", map[string]any{
+		"entryId": int(entryID),
+	})
+	if err != nil {
+		return coreerr.E(scope, "failed to navigate to history entry", err)
+	}
+
+	return wv.waitForLoad(ctx)
 }
 
 // addConsoleMessage adds a console message to the log.
@@ -433,12 +460,8 @@ func (wv *Webview) addConsoleMessage(msg ConsoleMessage) {
 	wv.mu.Lock()
 	defer wv.mu.Unlock()
 
-	if len(wv.consoleLogs) >= wv.consoleLimit {
-		// Remove oldest messages
-		drop := min(100, len(wv.consoleLogs))
-		wv.consoleLogs = wv.consoleLogs[drop:]
-	}
 	wv.consoleLogs = append(wv.consoleLogs, msg)
+	wv.consoleLogs = trimConsoleMessages(wv.consoleLogs, wv.consoleLimit)
 }
 
 // enableConsole enables console message capture.
@@ -563,12 +586,7 @@ func (wv *Webview) evaluate(ctx context.Context, script string) (any, error) {
 
 	// Check for exception
 	if exceptionDetails, ok := result["exceptionDetails"].(map[string]any); ok {
-		if exception, ok := exceptionDetails["exception"].(map[string]any); ok {
-			if description, ok := exception["description"].(string); ok {
-				return nil, coreerr.E("Webview.evaluate", description, nil)
-			}
-		}
-		return nil, coreerr.E("Webview.evaluate", "JavaScript error", nil)
+		return nil, runtimeExceptionError("Webview.evaluate", exceptionDetails)
 	}
 
 	// Extract result value

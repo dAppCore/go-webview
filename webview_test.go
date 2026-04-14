@@ -528,6 +528,20 @@ func TestAddConsoleMessage_Good(t *testing.T) {
 	}
 }
 
+// TestAddConsoleMessage_Good_ZeroLimitDropsMessages verifies zero retention disables storage.
+func TestAddConsoleMessage_Good_ZeroLimitDropsMessages(t *testing.T) {
+	wv := &Webview{
+		consoleLogs:  make([]ConsoleMessage, 0, 1),
+		consoleLimit: 0,
+	}
+
+	wv.addConsoleMessage(ConsoleMessage{Type: "log", Text: "ignored"})
+
+	if len(wv.consoleLogs) != 0 {
+		t.Fatalf("Expected zero retained messages, got %d", len(wv.consoleLogs))
+	}
+}
+
 // TestConsoleWatcherFilter_Good verifies console watcher filter matching.
 func TestConsoleWatcherFilter_Good(t *testing.T) {
 	// Create a minimal ConsoleWatcher without a real Webview
@@ -761,6 +775,53 @@ func TestConsoleWatcherFilteredMessages_Good(t *testing.T) {
 	}
 	if filtered[0].Type != "error" {
 		t.Errorf("Expected error type, got %q", filtered[0].Type)
+	}
+}
+
+// TestConsoleWatcherFilteredMessages_Good_RequiresAllActiveFilters verifies filters compose as an intersection.
+func TestConsoleWatcherFilteredMessages_Good_RequiresAllActiveFilters(t *testing.T) {
+	cw := &ConsoleWatcher{
+		messages: []ConsoleMessage{
+			{Type: "error", Text: "boom happened"},
+			{Type: "error", Text: "different message"},
+			{Type: "log", Text: "boom happened"},
+		},
+		filters: []ConsoleFilter{
+			{Type: "error"},
+			{Pattern: "boom"},
+		},
+		limit:    1000,
+		handlers: make([]consoleHandlerRegistration, 0),
+	}
+
+	filtered := cw.FilteredMessages()
+	if len(filtered) != 1 {
+		t.Fatalf("Expected 1 filtered message, got %d", len(filtered))
+	}
+	if filtered[0].Text != "boom happened" {
+		t.Fatalf("Expected the intersection match, got %q", filtered[0].Text)
+	}
+}
+
+// TestConsoleWatcherSetLimit_Good_TrimsExistingMessages verifies shrinking the limit trims buffered messages immediately.
+func TestConsoleWatcherSetLimit_Good_TrimsExistingMessages(t *testing.T) {
+	cw := &ConsoleWatcher{
+		messages: []ConsoleMessage{
+			{Type: "log", Text: "first"},
+			{Type: "log", Text: "second"},
+			{Type: "log", Text: "third"},
+		},
+		limit:    1000,
+		handlers: make([]consoleHandlerRegistration, 0),
+	}
+
+	cw.SetLimit(2)
+
+	if cw.Count() != 2 {
+		t.Fatalf("Expected 2 messages after trimming, got %d", cw.Count())
+	}
+	if messages := cw.Messages(); messages[0].Text != "second" || messages[1].Text != "third" {
+		t.Fatalf("Unexpected retained messages: %#v", messages)
 	}
 }
 

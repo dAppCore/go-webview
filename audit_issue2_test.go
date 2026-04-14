@@ -671,3 +671,167 @@ func TestExceptionWatcherWaitForException_Good_PreservesExistingHandlers(t *test
 		t.Fatalf("unexpected handler count after waiter removal: %d", len(ew.handlers))
 	}
 }
+
+func TestWebviewGoBack_Good_UsesNavigationHistoryAndWaitsForLoad(t *testing.T) {
+	server := newFakeCDPServer(t)
+	target := server.primaryTarget()
+
+	var methods []string
+	target.onMessage = func(target *fakeCDPTarget, msg cdpMessage) {
+		methods = append(methods, msg.Method)
+
+		switch msg.Method {
+		case "Page.getNavigationHistory":
+			target.reply(msg.ID, map[string]any{
+				"currentIndex": float64(1),
+				"entries": []map[string]any{
+					{"id": float64(101), "url": "https://example.com/one"},
+					{"id": float64(202), "url": "https://example.com/two"},
+				},
+			})
+		case "Page.navigateToHistoryEntry":
+			if got, ok := msg.Params["entryId"].(float64); !ok || got != 101 {
+				t.Fatalf("navigateToHistoryEntry entryId = %v, want 101", msg.Params["entryId"])
+			}
+			target.reply(msg.ID, map[string]any{})
+		case "Runtime.evaluate":
+			target.replyValue(msg.ID, "complete")
+		default:
+			t.Fatalf("unexpected method %q", msg.Method)
+		}
+	}
+
+	client, err := NewCDPClient(server.DebugURL())
+	if err != nil {
+		t.Fatalf("NewCDPClient returned error: %v", err)
+	}
+	defer func() { _ = client.Close() }()
+
+	wv := &Webview{
+		client:  client,
+		ctx:     context.Background(),
+		timeout: time.Second,
+	}
+
+	if err := wv.GoBack(); err != nil {
+		t.Fatalf("GoBack returned error: %v", err)
+	}
+
+	if len(methods) != 3 {
+		t.Fatalf("expected 3 CDP calls, got %d (%v)", len(methods), methods)
+	}
+	if methods[0] != "Page.getNavigationHistory" || methods[1] != "Page.navigateToHistoryEntry" || methods[2] != "Runtime.evaluate" {
+		t.Fatalf("unexpected call sequence: %v", methods)
+	}
+}
+
+func TestWebviewGoForward_Bad_NoHistoryEntry(t *testing.T) {
+	server := newFakeCDPServer(t)
+	target := server.primaryTarget()
+	target.onMessage = func(target *fakeCDPTarget, msg cdpMessage) {
+		if msg.Method != "Page.getNavigationHistory" {
+			t.Fatalf("unexpected method %q", msg.Method)
+		}
+		target.reply(msg.ID, map[string]any{
+			"currentIndex": float64(0),
+			"entries": []map[string]any{
+				{"id": float64(101), "url": "https://example.com/one"},
+			},
+		})
+	}
+
+	client, err := NewCDPClient(server.DebugURL())
+	if err != nil {
+		t.Fatalf("NewCDPClient returned error: %v", err)
+	}
+	defer func() { _ = client.Close() }()
+
+	wv := &Webview{
+		client:  client,
+		ctx:     context.Background(),
+		timeout: time.Second,
+	}
+
+	if err := wv.GoForward(); err == nil {
+		t.Fatal("GoForward succeeded without a forward history entry")
+	}
+}
+
+func TestWebviewEvaluate_Bad_UsesExceptionText(t *testing.T) {
+	server := newFakeCDPServer(t)
+	target := server.primaryTarget()
+	target.onMessage = func(target *fakeCDPTarget, msg cdpMessage) {
+		if msg.Method != "Runtime.evaluate" {
+			t.Fatalf("unexpected method %q", msg.Method)
+		}
+		target.writeJSON(cdpResponse{
+			ID: msg.ID,
+			Result: map[string]any{
+				"exceptionDetails": map[string]any{
+					"text": "ReferenceError: missingValue is not defined",
+				},
+			},
+		})
+	}
+
+	client, err := NewCDPClient(server.DebugURL())
+	if err != nil {
+		t.Fatalf("NewCDPClient returned error: %v", err)
+	}
+	defer func() { _ = client.Close() }()
+
+	wv := &Webview{
+		client:  client,
+		ctx:     context.Background(),
+		timeout: time.Second,
+	}
+
+	if _, err := wv.Evaluate("missingValue"); err == nil || !core.Contains(err.Error(), "ReferenceError: missingValue is not defined") {
+		t.Fatalf("Evaluate error = %v, want exception text", err)
+	}
+}
+
+func TestAngularHelperGetRouterState_Good_StringifiesParams(t *testing.T) {
+	server := newFakeCDPServer(t)
+	target := server.primaryTarget()
+	target.onMessage = func(target *fakeCDPTarget, msg cdpMessage) {
+		if msg.Method != "Runtime.evaluate" {
+			t.Fatalf("unexpected method %q", msg.Method)
+		}
+		target.replyValue(msg.ID, map[string]any{
+			"url":      "/items/123",
+			"fragment": "details",
+			"params": map[string]any{
+				"id":     float64(123),
+				"active": true,
+			},
+			"queryParams": map[string]any{
+				"page": float64(2),
+			},
+		})
+	}
+
+	client, err := NewCDPClient(server.DebugURL())
+	if err != nil {
+		t.Fatalf("NewCDPClient returned error: %v", err)
+	}
+	defer func() { _ = client.Close() }()
+
+	wv := &Webview{
+		client:  client,
+		ctx:     context.Background(),
+		timeout: time.Second,
+	}
+	ah := NewAngularHelper(wv)
+
+	state, err := ah.GetRouterState()
+	if err != nil {
+		t.Fatalf("GetRouterState returned error: %v", err)
+	}
+	if state.Params["id"] != "123" || state.Params["active"] != "true" {
+		t.Fatalf("unexpected params: %#v", state.Params)
+	}
+	if state.QueryParams["page"] != "2" {
+		t.Fatalf("unexpected query params: %#v", state.QueryParams)
+	}
+}

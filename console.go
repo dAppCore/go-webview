@@ -11,6 +11,7 @@ import (
 	"time"
 
 	core "dappco.re/go/core"
+	coreerr "dappco.re/go/core/log"
 )
 
 // ConsoleWatcher provides advanced console message watching capabilities.
@@ -143,6 +144,37 @@ func consoleMessageTimestamp(params map[string]any) time.Time {
 	return time.Unix(seconds, nanoseconds).UTC()
 }
 
+func trimConsoleMessages(messages []ConsoleMessage, limit int) []ConsoleMessage {
+	if limit < 0 {
+		limit = 0
+	}
+
+	if overflow := len(messages) - limit; overflow > 0 {
+		copy(messages, messages[overflow:])
+		messages = messages[:len(messages)-overflow]
+	}
+
+	return messages
+}
+
+func runtimeExceptionText(exceptionDetails map[string]any) string {
+	if exception, ok := exceptionDetails["exception"].(map[string]any); ok {
+		if description, ok := exception["description"].(string); ok && description != "" {
+			return description
+		}
+	}
+
+	if text, ok := exceptionDetails["text"].(string); ok && text != "" {
+		return text
+	}
+
+	return "JavaScript error"
+}
+
+func runtimeExceptionError(scope string, exceptionDetails map[string]any) error {
+	return coreerr.E(scope, runtimeExceptionText(exceptionDetails), nil)
+}
+
 // AddFilter adds a filter to the watcher.
 func (cw *ConsoleWatcher) AddFilter(filter ConsoleFilter) {
 	cw.mu.Lock()
@@ -189,7 +221,11 @@ func (cw *ConsoleWatcher) removeHandler(id int64) {
 func (cw *ConsoleWatcher) SetLimit(limit int) {
 	cw.mu.Lock()
 	defer cw.mu.Unlock()
+	if limit < 0 {
+		limit = 0
+	}
 	cw.limit = limit
+	cw.messages = trimConsoleMessages(cw.messages, cw.limit)
 }
 
 // Messages returns all captured messages.
@@ -326,7 +362,7 @@ func (cw *ConsoleWatcher) HasErrors() bool {
 	defer cw.mu.RUnlock()
 
 	for _, msg := range cw.messages {
-		if msg.Type == "error" {
+		if normalizeConsoleType(msg.Type) == "error" {
 			return true
 		}
 	}
@@ -347,7 +383,7 @@ func (cw *ConsoleWatcher) ErrorCount() int {
 
 	count := 0
 	for _, msg := range cw.messages {
-		if msg.Type == "error" {
+		if normalizeConsoleType(msg.Type) == "error" {
 			count++
 		}
 	}
@@ -392,12 +428,8 @@ func (cw *ConsoleWatcher) handleConsoleEvent(params map[string]any) {
 func (cw *ConsoleWatcher) addMessage(msg ConsoleMessage) {
 	cw.mu.Lock()
 
-	// Enforce limit
-	if len(cw.messages) >= cw.limit {
-		drop := min(100, len(cw.messages))
-		cw.messages = cw.messages[drop:]
-	}
 	cw.messages = append(cw.messages, msg)
+	cw.messages = trimConsoleMessages(cw.messages, cw.limit)
 
 	// Copy handlers to call outside lock
 	handlers := slices.Clone(cw.handlers)
@@ -415,11 +447,11 @@ func (cw *ConsoleWatcher) matchesFilter(msg ConsoleMessage) bool {
 		return true
 	}
 	for _, filter := range cw.filters {
-		if cw.matchesSingleFilter(msg, filter) {
-			return true
+		if !cw.matchesSingleFilter(msg, filter) {
+			return false
 		}
 	}
-	return false
+	return true
 }
 
 // matchesSingleFilter checks if a message matches a specific filter.
@@ -619,11 +651,7 @@ func (ew *ExceptionWatcher) handleException(params map[string]any) {
 	}
 
 	// Try to get exception value description
-	if exc, ok := exceptionDetails["exception"].(map[string]any); ok {
-		if desc, ok := exc["description"].(string); ok && desc != "" {
-			text = desc
-		}
-	}
+	text = runtimeExceptionText(exceptionDetails)
 
 	info := ExceptionInfo{
 		Text:         text,

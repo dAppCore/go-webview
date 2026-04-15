@@ -61,14 +61,13 @@ func NewConsoleWatcher(wv *Webview) *ConsoleWatcher {
 	return watcher
 }
 
-// normalizeConsoleType converts CDP event types to package-level values.
+// normalizeConsoleType converts CDP event types to the canonical package value.
 //
-// This keeps the legacy warn alias for compatibility. Use canonicalConsoleType
-// when the exact RFC type names are required.
+// It accepts legacy warn aliases but stores the RFC form, warning.
 func normalizeConsoleType(raw string) string {
 	normalized := strings.ToLower(core.Trim(core.Sprint(raw)))
 	if normalized == "warning" {
-		return "warn"
+		return "warning"
 	}
 	return normalized
 }

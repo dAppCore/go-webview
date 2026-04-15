@@ -322,6 +322,9 @@ func (c *CDPClient) CloseTab() error {
 	if err != nil {
 		return coreerr.E("CDPClient.CloseTab", "failed to determine target ID", err)
 	}
+	defer func() {
+		_ = c.Close()
+	}()
 
 	ctx, cancel := context.WithTimeout(c.ctx, debugEndpointTimeout)
 	defer cancel()
@@ -336,8 +339,7 @@ func (c *CDPClient) CloseTab() error {
 	if success, ok := result["success"].(bool); ok && !success {
 		return coreerr.E("CDPClient.CloseTab", "target close was not acknowledged", nil)
 	}
-
-	return c.Close()
+	return nil
 }
 
 // ListTargets returns all available targets.

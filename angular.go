@@ -290,8 +290,8 @@ func (ah *AngularHelper) GetRouterState() (*AngularRouterState, error) {
 		state.Fragment = core.Sprint(fragment)
 	}
 
-	state.Params = stringifyMap(resultMap["params"])
-	state.QueryParams = stringifyMap(resultMap["queryParams"])
+	state.Params = copyStringOnlyMap(resultMap["params"])
+	state.QueryParams = copyStringOnlyMap(resultMap["queryParams"])
 
 	return state, nil
 }
@@ -598,12 +598,14 @@ func getString(m map[string]any, key string) string {
 	return ""
 }
 
-func stringifyMap(value any) map[string]string {
+func copyStringOnlyMap(value any) map[string]string {
 	switch typed := value.(type) {
 	case map[string]any:
 		result := make(map[string]string, len(typed))
 		for key, item := range typed {
-			result[key] = core.Sprint(item)
+			if text, ok := item.(string); ok {
+				result[key] = text
+			}
 		}
 		return result
 	case map[string]string:

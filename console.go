@@ -27,7 +27,7 @@ type ConsoleWatcher struct {
 
 // ConsoleFilter filters console messages.
 type ConsoleFilter struct {
-	Type    string // Filter by type (log, warn, error, info, debug), empty for all
+	Type    string // Exact message type match, empty for all
 	Pattern string // Filter by text pattern (substring match)
 }
 
@@ -60,12 +60,7 @@ func NewConsoleWatcher(wv *Webview) *ConsoleWatcher {
 // normalizeConsoleType converts CDP event types to package-level values.
 func normalizeConsoleType(raw string) string {
 	normalized := strings.ToLower(core.Trim(core.Sprint(raw)))
-	switch normalized {
-	case "warning":
-		return "warn"
-	default:
-		return normalized
-	}
+	return normalized
 }
 
 // consoleTextFromArgs extracts message text from Runtime.consoleAPICalled args.
@@ -279,7 +274,7 @@ func (cw *ConsoleWatcher) ErrorsAll() iter.Seq[ConsoleMessage] {
 		defer cw.mu.RUnlock()
 
 		for _, msg := range cw.messages {
-			if normalizeConsoleType(msg.Type) == "error" {
+			if msg.Type == "error" {
 				if !yield(msg) {
 					return
 				}
@@ -300,7 +295,7 @@ func (cw *ConsoleWatcher) WarningsAll() iter.Seq[ConsoleMessage] {
 		defer cw.mu.RUnlock()
 
 		for _, msg := range cw.messages {
-			if normalizeConsoleType(msg.Type) == "warn" {
+			if msg.Type == "warning" {
 				if !yield(msg) {
 					return
 				}
@@ -361,7 +356,7 @@ func (cw *ConsoleWatcher) HasErrors() bool {
 	defer cw.mu.RUnlock()
 
 	for _, msg := range cw.messages {
-		if normalizeConsoleType(msg.Type) == "error" {
+		if msg.Type == "error" {
 			return true
 		}
 	}
@@ -382,7 +377,7 @@ func (cw *ConsoleWatcher) ErrorCount() int {
 
 	count := 0
 	for _, msg := range cw.messages {
-		if normalizeConsoleType(msg.Type) == "error" {
+		if msg.Type == "error" {
 			count++
 		}
 	}
@@ -459,7 +454,7 @@ func (cw *ConsoleWatcher) matchesFilter(msg ConsoleMessage) bool {
 
 // matchesSingleFilter checks if a message matches a specific filter.
 func (cw *ConsoleWatcher) matchesSingleFilter(msg ConsoleMessage, filter ConsoleFilter) bool {
-	if filter.Type != "" && msg.Type != normalizeConsoleType(filter.Type) {
+	if filter.Type != "" && msg.Type != filter.Type {
 		return false
 	}
 	if filter.Pattern != "" {
@@ -684,7 +679,7 @@ func FormatConsoleOutput(messages []ConsoleMessage) string {
 		switch normalizeConsoleType(msg.Type) {
 		case "error":
 			prefix = "[ERROR]"
-		case "warn":
+		case "warning", "warn":
 			prefix = "[WARN]"
 		case "info":
 			prefix = "[INFO]"

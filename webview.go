@@ -47,7 +47,7 @@ type Webview struct {
 
 // ConsoleMessage represents a captured console log message.
 type ConsoleMessage struct {
-	Type      string    `json:"type"`      // log, warn, error, info, debug
+	Type      string    `json:"type"`      // log, warning, error, info, debug
 	Text      string    `json:"text"`      // Message text
 	Timestamp time.Time `json:"timestamp"` // When the message was logged
 	URL       string    `json:"url"`       // Source URL
@@ -415,41 +415,11 @@ func (wv *Webview) navigateHistory(delta int, scope string) error {
 	ctx, cancel := context.WithTimeout(wv.ctx, wv.timeout)
 	defer cancel()
 
-	result, err := wv.client.Call(ctx, "Page.getNavigationHistory", nil)
-	if err != nil {
-		return coreerr.E(scope, "failed to get navigation history", err)
-	}
-
-	currentIndex, ok := result["currentIndex"].(float64)
-	if !ok {
-		return coreerr.E(scope, "invalid navigation history index", nil)
-	}
-
-	entries, ok := result["entries"].([]any)
-	if !ok {
-		return coreerr.E(scope, "invalid navigation history entries", nil)
-	}
-
-	targetIndex := int(currentIndex) + delta
-	if targetIndex < 0 || targetIndex >= len(entries) {
-		return coreerr.E(scope, "no history entry available", nil)
-	}
-
-	entry, ok := entries[targetIndex].(map[string]any)
-	if !ok {
-		return coreerr.E(scope, "invalid navigation history entry", nil)
-	}
-
-	entryID, ok := entry["id"].(float64)
-	if !ok {
-		return coreerr.E(scope, "invalid navigation history entry ID", nil)
-	}
-
-	_, err = wv.client.Call(ctx, "Page.navigateToHistoryEntry", map[string]any{
-		"entryId": int(entryID),
+	_, err := wv.client.Call(ctx, "Page.goBackOrForward", map[string]any{
+		"delta": delta,
 	})
 	if err != nil {
-		return coreerr.E(scope, "failed to navigate to history entry", err)
+		return coreerr.E(scope, "failed to navigate history", err)
 	}
 
 	return wv.waitForLoad(ctx)

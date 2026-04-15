@@ -579,6 +579,15 @@ func TestConsoleWatcherFilter_Good(t *testing.T) {
 	if cw.matchesFilter(msg) {
 		t.Error("Expected 'test error' NOT to match pattern 'hello'")
 	}
+
+	cw.ClearFilters()
+	cw.AddFilter(ConsoleFilter{Type: "warning"})
+	if !cw.matchesFilter(ConsoleMessage{Type: "warning", Text: "deprecated"}) {
+		t.Error("Expected warning message to match warning filter")
+	}
+	if cw.matchesFilter(ConsoleMessage{Type: "warn", Text: "deprecated"}) {
+		t.Error("Expected warn message not to match warning filter")
+	}
 }
 
 // TestConsoleWatcherCounts_Good verifies console watcher counting methods.

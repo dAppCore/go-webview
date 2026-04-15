@@ -15,7 +15,10 @@ type AngularHelper struct {
 	timeout time.Duration
 }
 
-// NewAngularHelper creates a new Angular helper for the webview.
+// Create Angular-specific helpers for a page already loaded in the Webview.
+//
+//	ah := webview.NewAngularHelper(wv)
+//	ah.SetTimeout(15 * time.Second)
 func NewAngularHelper(wv *Webview) *AngularHelper {
 	return &AngularHelper{
 		wv:      wv,

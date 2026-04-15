@@ -423,7 +423,12 @@ type ActionSequence struct {
 	actions []Action
 }
 
-// NewActionSequence creates a new action sequence.
+// Build a reusable action pipeline before executing it against a Webview.
+//
+//	sequence := webview.NewActionSequence().
+//		Navigate("https://example.com").
+//		WaitForSelector("form").
+//		Click("button")
 func NewActionSequence() *ActionSequence {
 	return &ActionSequence{
 		actions: make([]Action, 0),

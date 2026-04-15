@@ -39,7 +39,10 @@ type consoleHandlerRegistration struct {
 	handler ConsoleHandler
 }
 
-// NewConsoleWatcher creates a new console watcher for the webview.
+// Watch console messages from a Webview while a flow is running.
+//
+//	watcher := webview.NewConsoleWatcher(wv)
+//	watcher.AddFilter(webview.ConsoleFilter{Type: "error"})
 func NewConsoleWatcher(wv *Webview) *ConsoleWatcher {
 	watcher := &ConsoleWatcher{
 		wv:       wv,
@@ -525,7 +528,10 @@ type exceptionHandlerRegistration struct {
 	handler func(ExceptionInfo)
 }
 
-// NewExceptionWatcher creates a new exception watcher.
+// Capture Runtime.exceptionThrown events from the active page.
+//
+//	watcher := webview.NewExceptionWatcher(wv)
+//	exc, err := watcher.WaitForException(ctx)
 func NewExceptionWatcher(wv *Webview) *ExceptionWatcher {
 	ew := &ExceptionWatcher{
 		wv:         wv,

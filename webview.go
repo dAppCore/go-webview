@@ -76,8 +76,9 @@ type BoundingBox struct {
 // Option configures a Webview instance.
 type Option func(*Webview) error
 
-// WithDebugURL sets the Chrome DevTools debugging URL.
-// Example: http://localhost:9222
+// Connect to Chrome running with --remote-debugging-port=9222.
+//
+//	webview.New(webview.WithDebugURL("http://localhost:9222"))
 func WithDebugURL(url string) Option {
 	return func(wv *Webview) error {
 		client, err := NewCDPClient(url)
@@ -89,7 +90,9 @@ func WithDebugURL(url string) Option {
 	}
 }
 
-// WithTimeout sets the default timeout for operations.
+// Give every Webview operation a 10 second default deadline.
+//
+//	webview.New(webview.WithDebugURL("http://localhost:9222"), webview.WithTimeout(10*time.Second))
 func WithTimeout(d time.Duration) Option {
 	return func(wv *Webview) error {
 		wv.timeout = d
@@ -97,8 +100,9 @@ func WithTimeout(d time.Duration) Option {
 	}
 }
 
-// WithConsoleLimit sets the maximum number of console messages to retain.
-// Default is 1000.
+// Retain only the most recent 200 console messages on the Webview.
+//
+//	webview.New(webview.WithDebugURL("http://localhost:9222"), webview.WithConsoleLimit(200))
 func WithConsoleLimit(limit int) Option {
 	return func(wv *Webview) error {
 		if limit < 0 {
@@ -109,7 +113,9 @@ func WithConsoleLimit(limit int) Option {
 	}
 }
 
-// New creates a new Webview instance with the given options.
+// Create a Webview bound to an existing Chrome DevTools endpoint.
+//
+//	wv, err := webview.New(webview.WithDebugURL("http://localhost:9222"))
 func New(opts ...Option) (*Webview, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -158,7 +164,9 @@ func (wv *Webview) Close() error {
 	return nil
 }
 
-// Navigate navigates to the specified URL.
+// Load a page and wait for document.readyState === "complete".
+//
+//	wv.Navigate("https://example.com")
 func (wv *Webview) Navigate(url string) error {
 	ctx, cancel := context.WithTimeout(wv.ctx, wv.timeout)
 	defer cancel()
@@ -174,7 +182,9 @@ func (wv *Webview) Navigate(url string) error {
 	return wv.waitForLoad(ctx)
 }
 
-// Click clicks on an element matching the selector.
+// Click a button or link resolved by CSS selector.
+//
+//	wv.Click("button[type=submit]")
 func (wv *Webview) Click(selector string) error {
 	ctx, cancel := context.WithTimeout(wv.ctx, wv.timeout)
 	defer cancel()
@@ -182,7 +192,9 @@ func (wv *Webview) Click(selector string) error {
 	return wv.click(ctx, selector)
 }
 
-// Type types text into an element matching the selector.
+// Focus an input and type text through CDP key events.
+//
+//	wv.Type("input[name=email]", "agent@example.com")
 func (wv *Webview) Type(selector, text string) error {
 	ctx, cancel := context.WithTimeout(wv.ctx, wv.timeout)
 	defer cancel()
@@ -190,7 +202,9 @@ func (wv *Webview) Type(selector, text string) error {
 	return wv.typeText(ctx, selector, text)
 }
 
-// QuerySelector finds an element by CSS selector and returns its information.
+// Inspect the first matching element, including attributes and box metrics.
+//
+//	elem, err := wv.QuerySelector("#main")
 func (wv *Webview) QuerySelector(selector string) (*ElementInfo, error) {
 	ctx, cancel := context.WithTimeout(wv.ctx, wv.timeout)
 	defer cancel()
@@ -198,7 +212,9 @@ func (wv *Webview) QuerySelector(selector string) (*ElementInfo, error) {
 	return wv.querySelector(ctx, selector)
 }
 
-// QuerySelectorAll finds all elements matching the selector.
+// Inspect every element that matches the CSS selector.
+//
+//	items, err := wv.QuerySelectorAll("table tbody tr")
 func (wv *Webview) QuerySelectorAll(selector string) ([]*ElementInfo, error) {
 	ctx, cancel := context.WithTimeout(wv.ctx, wv.timeout)
 	defer cancel()
@@ -251,7 +267,9 @@ func (wv *Webview) ClearConsole() {
 	wv.consoleLogs = wv.consoleLogs[:0]
 }
 
-// Screenshot captures a screenshot and returns it as PNG bytes.
+// Capture the current page as PNG bytes.
+//
+//	png, err := wv.Screenshot()
 func (wv *Webview) Screenshot() ([]byte, error) {
 	ctx, cancel := context.WithTimeout(wv.ctx, wv.timeout)
 	defer cancel()
@@ -276,7 +294,10 @@ func (wv *Webview) Screenshot() ([]byte, error) {
 	return data, nil
 }
 
-// Evaluate executes JavaScript and returns the result.
+// Run JavaScript in the page and return the serialised value.
+//
+//	title, err := wv.Evaluate("document.title")
+//
 // Note: This intentionally executes arbitrary JavaScript in the browser context
 // for browser automation purposes. The script runs in the sandboxed browser environment.
 func (wv *Webview) Evaluate(script string) (any, error) {
@@ -286,7 +307,9 @@ func (wv *Webview) Evaluate(script string) (any, error) {
 	return wv.evaluate(ctx, script)
 }
 
-// WaitForSelector waits for an element matching the selector to appear.
+// Block until an element matching the selector exists in the DOM.
+//
+//	wv.WaitForSelector("[data-ready=true]")
 func (wv *Webview) WaitForSelector(selector string) error {
 	ctx, cancel := context.WithTimeout(wv.ctx, wv.timeout)
 	defer cancel()
@@ -355,7 +378,9 @@ func (wv *Webview) GetHTML(selector string) (string, error) {
 	return html, nil
 }
 
-// SetViewport sets the viewport size.
+// Emulate a 1440x900 desktop viewport for later interactions.
+//
+//	wv.SetViewport(1440, 900)
 func (wv *Webview) SetViewport(width, height int) error {
 	ctx, cancel := context.WithTimeout(wv.ctx, wv.timeout)
 	defer cancel()
@@ -373,7 +398,9 @@ func (wv *Webview) SetViewport(width, height int) error {
 	return err
 }
 
-// SetUserAgent sets the user agent string.
+// Override the browser user agent for later requests.
+//
+//	wv.SetUserAgent("Mozilla/5.0 AgentHarness/1.0")
 func (wv *Webview) SetUserAgent(userAgent string) error {
 	ctx, cancel := context.WithTimeout(wv.ctx, wv.timeout)
 	defer cancel()

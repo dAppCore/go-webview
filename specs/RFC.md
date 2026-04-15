@@ -423,8 +423,8 @@ Methods:
 - `GetHTML(selector string) (string, error)`: Returns `document.documentElement.outerHTML` when `selector` is empty; otherwise returns `document.querySelector(selector)?.outerHTML || ""`.
 - `GetTitle() (string, error)`: Evaluates `document.title` and requires the result to be a string.
 - `GetURL() (string, error)`: Evaluates `window.location.href` and requires the result to be a string.
-- `GoBack() error`: Calls `Page.goBackOrForward` with `delta: -1`.
-- `GoForward() error`: Calls `Page.goBackOrForward` with `delta: 1`.
+- `GoBack() error`: Calls `Page.getNavigationHistory`, selects the previous entry, and then calls `Page.navigateToHistoryEntry`.
+- `GoForward() error`: Calls `Page.getNavigationHistory`, selects the next entry, and then calls `Page.navigateToHistoryEntry`.
 - `Navigate(url string) error`: Calls `Page.navigate` and then polls `document.readyState` every 100 ms until it becomes `"complete"` or the timeout expires.
 - `QuerySelector(selector string) (*ElementInfo, error)`: Fetches the document root, runs `DOM.querySelector`, errors when the selector does not resolve, and returns `ElementInfo` for the matched node.
 - `QuerySelectorAll(selector string) ([]*ElementInfo, error)`: Runs `DOM.querySelectorAll` and returns one `ElementInfo` per node ID whose metadata lookup succeeds. Nodes whose metadata fetch fails are skipped.

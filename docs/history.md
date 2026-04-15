@@ -73,7 +73,7 @@ The JavaScript Promise used in `waitForZoneStability` has an internal 5-second `
 
 ### CloseTab Implementation
 
-`CDPClient.CloseTab` calls `Browser.close`, which closes the entire browser rather than just the tab. The correct CDP command for closing a single tab is `Target.closeTarget` with the target's ID extracted from the WebSocket URL. This is a bug.
+`CDPClient.CloseTab` now uses `Target.closeTarget` with the current target ID extracted from the WebSocket URL, so closing one tab no longer tears down the entire browser.
 
 ---
 

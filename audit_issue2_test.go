@@ -672,7 +672,7 @@ func TestExceptionWatcherWaitForException_Good_PreservesExistingHandlers(t *test
 	}
 }
 
-func TestWebviewGoBack_Good_UsesGoBackOrForwardAndWaitsForLoad(t *testing.T) {
+func TestWebviewGoBack_Good_UsesNavigationHistoryAndWaitsForLoad(t *testing.T) {
 	server := newFakeCDPServer(t)
 	target := server.primaryTarget()
 
@@ -681,9 +681,18 @@ func TestWebviewGoBack_Good_UsesGoBackOrForwardAndWaitsForLoad(t *testing.T) {
 		methods = append(methods, msg.Method)
 
 		switch msg.Method {
-		case "Page.goBackOrForward":
-			if got, ok := msg.Params["delta"].(float64); !ok || got != -1 {
-				t.Fatalf("goBackOrForward delta = %v, want -1", msg.Params["delta"])
+		case "Page.getNavigationHistory":
+			target.reply(msg.ID, map[string]any{
+				"currentIndex": float64(1),
+				"entries": []any{
+					map[string]any{"id": float64(11)},
+					map[string]any{"id": float64(12)},
+					map[string]any{"id": float64(13)},
+				},
+			})
+		case "Page.navigateToHistoryEntry":
+			if got, ok := msg.Params["entryId"].(float64); !ok || got != 11 {
+				t.Fatalf("navigateToHistoryEntry entryId = %v, want 11", msg.Params["entryId"])
 			}
 			target.reply(msg.ID, map[string]any{})
 		case "Runtime.evaluate":
@@ -709,22 +718,31 @@ func TestWebviewGoBack_Good_UsesGoBackOrForwardAndWaitsForLoad(t *testing.T) {
 		t.Fatalf("GoBack returned error: %v", err)
 	}
 
-	if len(methods) != 2 {
-		t.Fatalf("expected 2 CDP calls, got %d (%v)", len(methods), methods)
+	if len(methods) != 3 {
+		t.Fatalf("expected 3 CDP calls, got %d (%v)", len(methods), methods)
 	}
-	if methods[0] != "Page.goBackOrForward" || methods[1] != "Runtime.evaluate" {
+	if methods[0] != "Page.getNavigationHistory" || methods[1] != "Page.navigateToHistoryEntry" || methods[2] != "Runtime.evaluate" {
 		t.Fatalf("unexpected call sequence: %v", methods)
 	}
 }
 
-func TestWebviewGoForward_Good_UsesGoBackOrForwardAndWaitsForLoad(t *testing.T) {
+func TestWebviewGoForward_Good_UsesNavigationHistoryAndWaitsForLoad(t *testing.T) {
 	server := newFakeCDPServer(t)
 	target := server.primaryTarget()
 	target.onMessage = func(target *fakeCDPTarget, msg cdpMessage) {
 		switch msg.Method {
-		case "Page.goBackOrForward":
-			if got, ok := msg.Params["delta"].(float64); !ok || got != 1 {
-				t.Fatalf("goBackOrForward delta = %v, want 1", msg.Params["delta"])
+		case "Page.getNavigationHistory":
+			target.reply(msg.ID, map[string]any{
+				"currentIndex": float64(1),
+				"entries": []any{
+					map[string]any{"id": float64(11)},
+					map[string]any{"id": float64(12)},
+					map[string]any{"id": float64(13)},
+				},
+			})
+		case "Page.navigateToHistoryEntry":
+			if got, ok := msg.Params["entryId"].(float64); !ok || got != 13 {
+				t.Fatalf("navigateToHistoryEntry entryId = %v, want 13", msg.Params["entryId"])
 			}
 			target.reply(msg.ID, map[string]any{})
 		case "Runtime.evaluate":

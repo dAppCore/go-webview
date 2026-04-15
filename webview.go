@@ -415,8 +415,38 @@ func (wv *Webview) navigateHistory(delta int, scope string) error {
 	ctx, cancel := context.WithTimeout(wv.ctx, wv.timeout)
 	defer cancel()
 
-	_, err := wv.client.Call(ctx, "Page.goBackOrForward", map[string]any{
-		"delta": delta,
+	history, err := wv.client.Call(ctx, "Page.getNavigationHistory", nil)
+	if err != nil {
+		return coreerr.E(scope, "failed to get navigation history", err)
+	}
+
+	currentIndexFloat, ok := history["currentIndex"].(float64)
+	if !ok {
+		return coreerr.E(scope, "invalid navigation history index", nil)
+	}
+
+	entries, ok := history["entries"].([]any)
+	if !ok {
+		return coreerr.E(scope, "invalid navigation history entries", nil)
+	}
+
+	targetIndex := int(currentIndexFloat) + delta
+	if targetIndex < 0 || targetIndex >= len(entries) {
+		return coreerr.E(scope, "no navigation history entry available", nil)
+	}
+
+	entry, ok := entries[targetIndex].(map[string]any)
+	if !ok {
+		return coreerr.E(scope, "invalid navigation history entry", nil)
+	}
+
+	entryIDFloat, ok := entry["id"].(float64)
+	if !ok {
+		return coreerr.E(scope, "invalid navigation history entry id", nil)
+	}
+
+	_, err = wv.client.Call(ctx, "Page.navigateToHistoryEntry", map[string]any{
+		"entryId": int(entryIDFloat),
 	})
 	if err != nil {
 		return coreerr.E(scope, "failed to navigate history", err)

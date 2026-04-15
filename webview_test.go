@@ -778,8 +778,8 @@ func TestConsoleWatcherFilteredMessages_Good(t *testing.T) {
 	}
 }
 
-// TestConsoleWatcherFilteredMessages_Good_RequiresAllActiveFilters verifies filters compose as an intersection.
-func TestConsoleWatcherFilteredMessages_Good_RequiresAllActiveFilters(t *testing.T) {
+// TestConsoleWatcherFilteredMessages_Good_UsesAnyActiveFilter verifies filters compose as a union.
+func TestConsoleWatcherFilteredMessages_Good_UsesAnyActiveFilter(t *testing.T) {
 	cw := &ConsoleWatcher{
 		messages: []ConsoleMessage{
 			{Type: "error", Text: "boom happened"},
@@ -795,11 +795,17 @@ func TestConsoleWatcherFilteredMessages_Good_RequiresAllActiveFilters(t *testing
 	}
 
 	filtered := cw.FilteredMessages()
-	if len(filtered) != 1 {
-		t.Fatalf("Expected 1 filtered message, got %d", len(filtered))
+	if len(filtered) != 3 {
+		t.Fatalf("Expected 3 filtered messages, got %d", len(filtered))
 	}
 	if filtered[0].Text != "boom happened" {
-		t.Fatalf("Expected the intersection match, got %q", filtered[0].Text)
+		t.Fatalf("Expected the first matching message, got %q", filtered[0].Text)
+	}
+	if filtered[1].Text != "different message" {
+		t.Fatalf("Expected the second stored message to remain visible, got %q", filtered[1].Text)
+	}
+	if filtered[2].Text != "boom happened" {
+		t.Fatalf("Expected the log message matching the pattern filter, got %q", filtered[2].Text)
 	}
 }
 

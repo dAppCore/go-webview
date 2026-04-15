@@ -441,17 +441,21 @@ func (cw *ConsoleWatcher) addMessage(msg ConsoleMessage) {
 	}
 }
 
-// matchesFilter checks if a message matches any filter.
+// matchesFilter checks whether a message matches the active filter set.
+//
+// When no filters are configured, every message matches. When filters exist,
+// the watcher uses OR semantics: a message is included as soon as it matches
+// one configured filter.
 func (cw *ConsoleWatcher) matchesFilter(msg ConsoleMessage) bool {
 	if len(cw.filters) == 0 {
 		return true
 	}
 	for _, filter := range cw.filters {
-		if !cw.matchesSingleFilter(msg, filter) {
-			return false
+		if cw.matchesSingleFilter(msg, filter) {
+			return true
 		}
 	}
-	return true
+	return false
 }
 
 // matchesSingleFilter checks if a message matches a specific filter.

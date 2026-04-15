@@ -412,6 +412,34 @@ func (a SetValueAction) Execute(ctx context.Context, wv *Webview) error {
 	return err
 }
 
+// UploadFileAction uploads files into a file input resolved by selector.
+type UploadFileAction struct {
+	Selector  string
+	FilePaths []string
+}
+
+// Execute uploads files into the matching file input.
+func (a UploadFileAction) Execute(ctx context.Context, wv *Webview) error {
+	if wv == nil {
+		return coreerr.E("UploadFileAction.Execute", "webview is required", nil)
+	}
+	return wv.uploadFile(ctx, a.Selector, a.FilePaths)
+}
+
+// DragAndDropAction drags one element onto another.
+type DragAndDropAction struct {
+	SourceSelector string
+	TargetSelector string
+}
+
+// Execute drags the source element onto the target element.
+func (a DragAndDropAction) Execute(ctx context.Context, wv *Webview) error {
+	if wv == nil {
+		return coreerr.E("DragAndDropAction.Execute", "webview is required", nil)
+	}
+	return wv.dragAndDrop(ctx, a.SourceSelector, a.TargetSelector)
+}
+
 // ActionSequence represents a sequence of actions to execute.
 type ActionSequence struct {
 	actions []Action
@@ -530,6 +558,22 @@ func (s *ActionSequence) SetValue(selector, value string) *ActionSequence {
 	return s.Add(SetValueAction{Selector: selector, Value: value})
 }
 
+// UploadFile adds a file-upload action.
+func (s *ActionSequence) UploadFile(selector string, filePaths []string) *ActionSequence {
+	return s.Add(UploadFileAction{
+		Selector:  selector,
+		FilePaths: append([]string(nil), filePaths...),
+	})
+}
+
+// DragAndDrop adds a drag-and-drop action.
+func (s *ActionSequence) DragAndDrop(sourceSelector, targetSelector string) *ActionSequence {
+	return s.Add(DragAndDropAction{
+		SourceSelector: sourceSelector,
+		TargetSelector: targetSelector,
+	})
+}
+
 // Execute executes all actions in the sequence.
 func (s *ActionSequence) Execute(ctx context.Context, wv *Webview) error {
 	for i, action := range s.actions {
@@ -545,6 +589,10 @@ func (wv *Webview) UploadFile(selector string, filePaths []string) error {
 	ctx, cancel := context.WithTimeout(wv.ctx, wv.timeout)
 	defer cancel()
 
+	return wv.uploadFile(ctx, selector, filePaths)
+}
+
+func (wv *Webview) uploadFile(ctx context.Context, selector string, filePaths []string) error {
 	// Get the element's node ID
 	elem, err := wv.querySelector(ctx, selector)
 	if err != nil {
@@ -567,6 +615,10 @@ func (wv *Webview) DragAndDrop(sourceSelector, targetSelector string) error {
 	ctx, cancel := context.WithTimeout(wv.ctx, wv.timeout)
 	defer cancel()
 
+	return wv.dragAndDrop(ctx, sourceSelector, targetSelector)
+}
+
+func (wv *Webview) dragAndDrop(ctx context.Context, sourceSelector, targetSelector string) error {
 	// Get source and target elements
 	source, err := wv.querySelector(ctx, sourceSelector)
 	if err != nil {

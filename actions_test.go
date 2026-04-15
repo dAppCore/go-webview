@@ -3,6 +3,7 @@ package webview
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -20,8 +21,8 @@ func newActionHarness(t *testing.T, onMessage func(*fakeCDPTarget, cdpMessage)) 
 		client:       client,
 		ctx:          context.Background(),
 		timeout:      time.Second,
-		consoleLogs:   make([]ConsoleMessage, 0),
-		consoleLimit:  10,
+		consoleLogs:  make([]ConsoleMessage, 0),
+		consoleLimit: 10,
 	}
 	t.Cleanup(func() {
 		_ = client.Close()
@@ -102,6 +103,35 @@ func TestActions_EvaluateActions_Good(t *testing.T) {
 	}
 }
 
+func TestActions_TypeAction_Good(t *testing.T) {
+	var methods []string
+	wv, _ := newActionHarness(t, func(target *fakeCDPTarget, msg cdpMessage) {
+		methods = append(methods, msg.Method)
+		switch msg.Method {
+		case "Runtime.evaluate":
+			expr, _ := msg.Params["expression"].(string)
+			if !strings.Contains(expr, `document.querySelector("#email")?.focus()`) {
+				t.Fatalf("focus expression = %q", expr)
+			}
+			target.replyValue(msg.ID, true)
+		case "Input.dispatchKeyEvent":
+			target.reply(msg.ID, map[string]any{})
+		default:
+			t.Fatalf("unexpected method %q", msg.Method)
+		}
+	})
+
+	if err := (TypeAction{Selector: "#email", Text: "ab"}).Execute(context.Background(), wv); err != nil {
+		t.Fatalf("TypeAction.Execute returned error: %v", err)
+	}
+	if len(methods) != 5 {
+		t.Fatalf("TypeAction made %d CDP calls, want 5", len(methods))
+	}
+	if methods[0] != "Runtime.evaluate" || methods[1] != "Input.dispatchKeyEvent" || methods[2] != "Input.dispatchKeyEvent" || methods[3] != "Input.dispatchKeyEvent" || methods[4] != "Input.dispatchKeyEvent" {
+		t.Fatalf("TypeAction call order = %v", methods)
+	}
+}
+
 func TestActions_DomActions_Good(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -110,7 +140,7 @@ func TestActions_DomActions_Good(t *testing.T) {
 		check   func(*testing.T, []cdpMessage)
 	}{
 		{
-			name: "click",
+			name:   "click",
 			action: ClickAction{Selector: "#button"},
 			handler: func(t *testing.T, target *fakeCDPTarget, msg cdpMessage) {
 				switch msg.Method {
@@ -313,7 +343,7 @@ func TestActions_DomActions_Good(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			var msgs []cdpMessage
-				wv, _ := newActionHarness(t, func(target *fakeCDPTarget, msg cdpMessage) {
+			wv, _ := newActionHarness(t, func(target *fakeCDPTarget, msg cdpMessage) {
 				msgs = append(msgs, msg)
 				tc.handler(t, target, msg)
 			})
@@ -324,6 +354,109 @@ func TestActions_DomActions_Good(t *testing.T) {
 			}
 			tc.check(t, msgs)
 		})
+	}
+}
+
+func TestActions_DoubleClickAction_Ugly_FallsBackToJS(t *testing.T) {
+	var expressions []string
+	wv, _ := newActionHarness(t, func(target *fakeCDPTarget, msg cdpMessage) {
+		switch msg.Method {
+		case "DOM.getDocument":
+			target.reply(msg.ID, map[string]any{"root": map[string]any{"nodeId": float64(1)}})
+		case "DOM.querySelector":
+			target.reply(msg.ID, map[string]any{"nodeId": float64(10)})
+		case "DOM.describeNode":
+			target.reply(msg.ID, map[string]any{"node": map[string]any{"nodeName": "BUTTON"}})
+		case "DOM.resolveNode":
+			target.reply(msg.ID, map[string]any{"object": map[string]any{"objectId": "obj-1"}})
+		case "Runtime.callFunctionOn":
+			target.reply(msg.ID, map[string]any{"result": map[string]any{"value": map[string]any{"innerHTML": "", "innerText": ""}}})
+		case "DOM.getBoxModel":
+			target.reply(msg.ID, map[string]any{})
+		case "Runtime.evaluate":
+			expr, _ := msg.Params["expression"].(string)
+			expressions = append(expressions, expr)
+			target.replyValue(msg.ID, true)
+		default:
+			t.Fatalf("unexpected method %q", msg.Method)
+		}
+	})
+
+	if err := (DoubleClickAction{Selector: "#button"}).Execute(context.Background(), wv); err != nil {
+		t.Fatalf("DoubleClickAction.Execute returned error: %v", err)
+	}
+	if len(expressions) != 1 || !strings.Contains(expressions[0], `new MouseEvent('dblclick'`) {
+		t.Fatalf("DoubleClickAction fallback expression = %v", expressions)
+	}
+}
+
+func TestActions_RightClickAction_Ugly_FallsBackToJS(t *testing.T) {
+	var expressions []string
+	wv, _ := newActionHarness(t, func(target *fakeCDPTarget, msg cdpMessage) {
+		switch msg.Method {
+		case "DOM.getDocument":
+			target.reply(msg.ID, map[string]any{"root": map[string]any{"nodeId": float64(1)}})
+		case "DOM.querySelector":
+			target.reply(msg.ID, map[string]any{"nodeId": float64(11)})
+		case "DOM.describeNode":
+			target.reply(msg.ID, map[string]any{"node": map[string]any{"nodeName": "BUTTON"}})
+		case "DOM.resolveNode":
+			target.reply(msg.ID, map[string]any{"object": map[string]any{"objectId": "obj-2"}})
+		case "Runtime.callFunctionOn":
+			target.reply(msg.ID, map[string]any{"result": map[string]any{"value": map[string]any{"innerHTML": "", "innerText": ""}}})
+		case "DOM.getBoxModel":
+			target.reply(msg.ID, map[string]any{})
+		case "Runtime.evaluate":
+			expr, _ := msg.Params["expression"].(string)
+			expressions = append(expressions, expr)
+			target.replyValue(msg.ID, true)
+		default:
+			t.Fatalf("unexpected method %q", msg.Method)
+		}
+	})
+
+	if err := (RightClickAction{Selector: "#button"}).Execute(context.Background(), wv); err != nil {
+		t.Fatalf("RightClickAction.Execute returned error: %v", err)
+	}
+	if len(expressions) != 1 || !strings.Contains(expressions[0], `new MouseEvent('contextmenu'`) {
+		t.Fatalf("RightClickAction fallback expression = %v", expressions)
+	}
+}
+
+func TestActions_PressKeyAction_Good_SimpleCharacter(t *testing.T) {
+	var methods []string
+	wv, _ := newActionHarness(t, func(target *fakeCDPTarget, msg cdpMessage) {
+		methods = append(methods, msg.Method)
+		if msg.Method != "Input.dispatchKeyEvent" {
+			t.Fatalf("unexpected method %q", msg.Method)
+		}
+		if msg.Params["type"] == "keyDown" {
+			if got := msg.Params["text"]; got != "a" {
+				t.Fatalf("keyDown text = %v, want a", got)
+			}
+		}
+		target.reply(msg.ID, map[string]any{})
+	})
+
+	if err := (PressKeyAction{Key: "a"}).Execute(context.Background(), wv); err != nil {
+		t.Fatalf("PressKeyAction.Execute returned error: %v", err)
+	}
+	if len(methods) != 2 {
+		t.Fatalf("PressKeyAction made %d CDP calls, want 2", len(methods))
+	}
+}
+
+func TestActions_ActionSequence_Bad_StopsOnError(t *testing.T) {
+	seq := NewActionSequence().
+		Add(failingAction{}).
+		Add(recordingAction{})
+
+	err := seq.Execute(context.Background(), &Webview{})
+	if err == nil {
+		t.Fatal("ActionSequence.Execute succeeded despite a failing action")
+	}
+	if !strings.Contains(err.Error(), "action index 0 failed") {
+		t.Fatalf("ActionSequence.Execute error = %v, want wrapped index failure", err)
 	}
 }
 
@@ -405,6 +538,18 @@ func TestActions_ClickAction_Ugly_FallsBackToJS(t *testing.T) {
 	if len(expressions) != 1 || !strings.Contains(expressions[0], `document.querySelector("#button")?.click()`) {
 		t.Fatalf("ClickAction fallback expression = %v", expressions)
 	}
+}
+
+type failingAction struct{}
+
+func (failingAction) Execute(context.Context, *Webview) error {
+	return errors.New("boom")
+}
+
+type recordingAction struct{}
+
+func (recordingAction) Execute(context.Context, *Webview) error {
+	return nil
 }
 
 type uploadFileAction struct {

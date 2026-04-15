@@ -20,8 +20,8 @@ func newAngularTestHarness(t *testing.T, onMessage func(*fakeCDPTarget, cdpMessa
 		client:       client,
 		ctx:          context.Background(),
 		timeout:      time.Second,
-		consoleLogs:   make([]ConsoleMessage, 0),
-		consoleLimit:  10,
+		consoleLogs:  make([]ConsoleMessage, 0),
+		consoleLimit: 10,
 	}
 	return NewAngularHelper(wv), target, client
 }
@@ -314,5 +314,15 @@ func TestAngular_copyStringOnlyMap_Good(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestAngular_formatJSValue_Ugly_FallsBackToSprint(t *testing.T) {
+	got := formatJSValue(make(chan int))
+	if got == "null" {
+		t.Fatalf("formatJSValue fallback returned %q, want quoted sprint output", got)
+	}
+	if !strings.HasPrefix(got, "\"") || !strings.HasSuffix(got, "\"") {
+		t.Fatalf("formatJSValue fallback = %q, want quoted string output", got)
 	}
 }

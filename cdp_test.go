@@ -162,6 +162,20 @@ func TestCdp_targetIDFromWebSocketURL_Bad(t *testing.T) {
 	}
 }
 
+func TestCdp_validateTargetWebSocketURL_Bad(t *testing.T) {
+	debugURL := mustParseURL(t, "http://localhost:9222")
+	for _, raw := range []string{
+		"http://localhost:9222/devtools/page/target-1",
+		"ws://example.com/devtools/page/target-1",
+	} {
+		t.Run(raw, func(t *testing.T) {
+			if _, err := validateTargetWebSocketURL(debugURL, raw); err == nil {
+				t.Fatalf("validateTargetWebSocketURL(%q) returned nil error", raw)
+			}
+		})
+	}
+}
+
 func TestCdp_isTerminalReadError_Good(t *testing.T) {
 	tests := []struct {
 		name string
@@ -376,6 +390,13 @@ func TestCdp_createTargetAt_Good(t *testing.T) {
 	}
 	if target == nil || target.WebSocketDebuggerURL == "" {
 		t.Fatalf("createTargetAt returned %#v", target)
+	}
+}
+
+func TestCdp_createTargetAt_Bad_InvalidPageURL(t *testing.T) {
+	server := newFakeCDPServer(t)
+	if _, err := createTargetAt(context.Background(), mustParseURL(t, server.DebugURL()), "javascript:alert(1)"); err == nil {
+		t.Fatal("createTargetAt succeeded with a dangerous page URL")
 	}
 }
 

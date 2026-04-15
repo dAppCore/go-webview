@@ -124,6 +124,20 @@ func TestWithConsoleLimit_Good(t *testing.T) {
 	}
 }
 
+// TestWithConsoleLimit_Bad_NegativeBecomesZero verifies negative limits are clamped to zero.
+func TestWithConsoleLimit_Bad_NegativeBecomesZero(t *testing.T) {
+	wv := &Webview{consoleLimit: 10}
+	opt := WithConsoleLimit(-1)
+
+	if err := opt(wv); err != nil {
+		t.Fatalf("WithConsoleLimit returned error: %v", err)
+	}
+
+	if wv.consoleLimit != 0 {
+		t.Fatalf("Expected consoleLimit 0, got %d", wv.consoleLimit)
+	}
+}
+
 // TestNew_Bad_NoDebugURL verifies New fails without a debug URL.
 func TestNew_Bad_NoDebugURL(t *testing.T) {
 	_, err := New()
@@ -137,6 +151,13 @@ func TestNew_Bad_InvalidDebugURL(t *testing.T) {
 	_, err := New(WithDebugURL("http://localhost:99999"))
 	if err == nil {
 		t.Error("Expected error when connecting to invalid debug URL")
+	}
+}
+
+func TestWebview_Close_Good_NoClient(t *testing.T) {
+	wv := &Webview{cancel: func() {}}
+	if err := wv.Close(); err != nil {
+		t.Fatalf("Close returned error for nil client: %v", err)
 	}
 }
 

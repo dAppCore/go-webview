@@ -21,8 +21,8 @@ func newWebviewHarness(t *testing.T, onMessage func(*fakeCDPTarget, cdpMessage))
 		client:       client,
 		ctx:          context.Background(),
 		timeout:      time.Second,
-		consoleLogs:   make([]ConsoleMessage, 0),
-		consoleLimit:  10,
+		consoleLogs:  make([]ConsoleMessage, 0),
+		consoleLimit: 10,
 	}
 	t.Cleanup(func() {
 		_ = client.Close()
@@ -37,8 +37,8 @@ func TestWebview_Close_Good(t *testing.T) {
 		client:       client,
 		ctx:          context.Background(),
 		cancel:       func() {},
-		consoleLogs:   make([]ConsoleMessage, 0),
-		consoleLimit:  10,
+		consoleLogs:  make([]ConsoleMessage, 0),
+		consoleLimit: 10,
 	}
 
 	if err := wv.Close(); err != nil {
@@ -275,6 +275,86 @@ func TestWebview_ScreenshotAndInfo_Good(t *testing.T) {
 	}
 	if err := wv.Reload(); err != nil {
 		t.Fatalf("Reload returned error: %v", err)
+	}
+}
+
+func TestWebview_Screenshot_Bad_InvalidData(t *testing.T) {
+	tests := []struct {
+		name   string
+		result map[string]any
+	}{
+		{name: "missing data", result: map[string]any{}},
+		{name: "invalid base64", result: map[string]any{"data": "%%%"}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			wv, _ := newWebviewHarness(t, func(target *fakeCDPTarget, msg cdpMessage) {
+				if msg.Method != "Page.captureScreenshot" {
+					t.Fatalf("unexpected method %q", msg.Method)
+				}
+				target.reply(msg.ID, tc.result)
+			})
+
+			if _, err := wv.Screenshot(); err == nil {
+				t.Fatalf("Screenshot succeeded with %#v", tc.result)
+			}
+		})
+	}
+}
+
+func TestWebview_GetURL_Bad_InvalidResult(t *testing.T) {
+	wv, _ := newWebviewHarness(t, func(target *fakeCDPTarget, msg cdpMessage) {
+		if msg.Method != "Runtime.evaluate" {
+			t.Fatalf("unexpected method %q", msg.Method)
+		}
+		target.reply(msg.ID, map[string]any{"result": map[string]any{"value": float64(1)}})
+	})
+
+	if _, err := wv.GetURL(); err == nil {
+		t.Fatal("GetURL succeeded with a non-string result")
+	}
+}
+
+func TestWebview_GetTitle_Bad_InvalidResult(t *testing.T) {
+	wv, _ := newWebviewHarness(t, func(target *fakeCDPTarget, msg cdpMessage) {
+		if msg.Method != "Runtime.evaluate" {
+			t.Fatalf("unexpected method %q", msg.Method)
+		}
+		target.reply(msg.ID, map[string]any{"result": map[string]any{"value": float64(1)}})
+	})
+
+	if _, err := wv.GetTitle(); err == nil {
+		t.Fatal("GetTitle succeeded with a non-string result")
+	}
+}
+
+func TestWebview_GetHTML_Bad_InvalidResult(t *testing.T) {
+	wv, _ := newWebviewHarness(t, func(target *fakeCDPTarget, msg cdpMessage) {
+		if msg.Method != "Runtime.evaluate" {
+			t.Fatalf("unexpected method %q", msg.Method)
+		}
+		target.reply(msg.ID, map[string]any{"result": map[string]any{"value": float64(1)}})
+	})
+
+	if _, err := wv.GetHTML("#main"); err == nil {
+		t.Fatal("GetHTML succeeded with a non-string result")
+	}
+}
+
+func TestWebview_NavigateHistory_Bad_MalformedHistory(t *testing.T) {
+	wv, _ := newWebviewHarness(t, func(target *fakeCDPTarget, msg cdpMessage) {
+		if msg.Method != "Page.getNavigationHistory" {
+			t.Fatalf("unexpected method %q", msg.Method)
+		}
+		target.reply(msg.ID, map[string]any{
+			"currentIndex": "bad",
+			"entries":      "bad",
+		})
+	})
+
+	if err := wv.GoBack(); err == nil {
+		t.Fatal("GoBack succeeded with malformed navigation history")
 	}
 }
 

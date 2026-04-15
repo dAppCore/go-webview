@@ -113,6 +113,40 @@ func TestConsole_trimConsoleMessages_Good(t *testing.T) {
 	}
 }
 
+func TestConsole_trimExceptionInfos_Good(t *testing.T) {
+	exceptions := []ExceptionInfo{
+		{Text: "one"},
+		{Text: "two"},
+		{Text: "three"},
+	}
+
+	tests := []struct {
+		name  string
+		limit int
+		want  []string
+	}{
+		{name: "no trim", limit: 3, want: []string{"one", "two", "three"}},
+		{name: "trim to one", limit: 1, want: []string{"three"}},
+		{name: "zero", limit: 0, want: nil},
+		{name: "negative", limit: -1, want: nil},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cloned := append([]ExceptionInfo(nil), exceptions...)
+			got := trimExceptionInfos(cloned, tc.limit)
+			if len(got) != len(tc.want) {
+				t.Fatalf("trimExceptionInfos len = %d, want %d", len(got), len(tc.want))
+			}
+			for i, want := range tc.want {
+				if got[i].Text != want {
+					t.Fatalf("trimExceptionInfos[%d] = %q, want %q", i, got[i].Text, want)
+				}
+			}
+		})
+	}
+}
+
 func TestConsole_sanitizeConsoleText_Good(t *testing.T) {
 	got := sanitizeConsoleText("line1\nline2\r\t\x1b[31m\x7f")
 	if !strings.Contains(got, `line1\nline2\r\t\x1b[31m`) {
@@ -212,6 +246,22 @@ func TestConsole_WaitForError_Bad(t *testing.T) {
 	}
 }
 
+func TestConsole_WaitForMessage_Bad_TimesOut(t *testing.T) {
+	watcher := &ConsoleWatcher{
+		messages: make([]ConsoleMessage, 0),
+		filters:  make([]ConsoleFilter, 0),
+		limit:    10,
+		handlers: make([]consoleHandlerRegistration, 0),
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+
+	if _, err := watcher.WaitForMessage(ctx, ConsoleFilter{Type: "error"}); err == nil {
+		t.Fatal("WaitForMessage succeeded without a matching message")
+	}
+}
+
 func TestConsole_handleConsoleEvent_Good(t *testing.T) {
 	watcher := &ConsoleWatcher{
 		messages: make([]ConsoleMessage, 0),
@@ -249,6 +299,37 @@ func TestConsole_handleConsoleEvent_Good(t *testing.T) {
 	}
 	if msgs[0].URL != "https://example.com/app.js" || msgs[0].Line != 12 || msgs[0].Column != 34 {
 		t.Fatalf("handleConsoleEvent stack info = %#v", msgs[0])
+	}
+}
+
+func TestConsole_removeHandler_Good(t *testing.T) {
+	cw := &ConsoleWatcher{
+		handlers: []consoleHandlerRegistration{
+			{id: 1},
+			{id: 2},
+		},
+	}
+
+	cw.removeHandler(1)
+	if len(cw.handlers) != 1 || cw.handlers[0].id != 2 {
+		t.Fatalf("removeHandler did not remove the requested handler: %#v", cw.handlers)
+	}
+
+	cw.removeHandler(99)
+	if len(cw.handlers) != 1 || cw.handlers[0].id != 2 {
+		t.Fatalf("removeHandler changed handlers unexpectedly: %#v", cw.handlers)
+	}
+}
+
+func TestConsole_SetLimit_Bad_NegativeBecomesZero(t *testing.T) {
+	watcher := &ConsoleWatcher{
+		limit:    10,
+		handlers: make([]consoleHandlerRegistration, 0),
+	}
+
+	watcher.SetLimit(-1)
+	if watcher.limit != 0 {
+		t.Fatalf("SetLimit(-1) = %d, want 0", watcher.limit)
 	}
 }
 
@@ -315,6 +396,39 @@ func TestConsole_ExceptionWatcherTrimsOldExceptions_Good(t *testing.T) {
 	excs := watcher.Exceptions()
 	if len(excs) != 2 || excs[0].Text != "b" || excs[1].Text != "c" {
 		t.Fatalf("ExceptionWatcher retained %#v, want [b c]", excs)
+	}
+}
+
+func TestConsole_ExceptionWatcher_removeHandler_Good(t *testing.T) {
+	ew := &ExceptionWatcher{
+		handlers: []exceptionHandlerRegistration{
+			{id: 1},
+			{id: 2},
+		},
+	}
+
+	ew.removeHandler(2)
+	if len(ew.handlers) != 1 || ew.handlers[0].id != 1 {
+		t.Fatalf("removeHandler did not remove the requested exception handler: %#v", ew.handlers)
+	}
+
+	ew.removeHandler(99)
+	if len(ew.handlers) != 1 || ew.handlers[0].id != 1 {
+		t.Fatalf("removeHandler changed exception handlers unexpectedly: %#v", ew.handlers)
+	}
+}
+
+func TestConsole_WaitForException_Bad_TimesOut(t *testing.T) {
+	ew := &ExceptionWatcher{
+		exceptions: make([]ExceptionInfo, 0),
+		handlers:   make([]exceptionHandlerRegistration, 0),
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+
+	if _, err := ew.WaitForException(ctx); err == nil {
+		t.Fatal("WaitForException succeeded without an exception")
 	}
 }
 

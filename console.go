@@ -49,6 +49,10 @@ func NewConsoleWatcher(wv *Webview) *ConsoleWatcher {
 		handlers: make([]consoleHandlerRegistration, 0),
 	}
 
+	if wv == nil || wv.client == nil {
+		return watcher
+	}
+
 	// Subscribe to console events from the webview's client
 	wv.client.OnEvent("Runtime.consoleAPICalled", func(params map[string]any) {
 		watcher.handleConsoleEvent(params)
@@ -527,6 +531,10 @@ func NewExceptionWatcher(wv *Webview) *ExceptionWatcher {
 		wv:         wv,
 		exceptions: make([]ExceptionInfo, 0),
 		handlers:   make([]exceptionHandlerRegistration, 0),
+	}
+
+	if wv == nil || wv.client == nil {
+		return ew
 	}
 
 	// Subscribe to exception events

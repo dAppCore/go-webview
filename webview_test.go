@@ -809,8 +809,8 @@ func TestConsoleWatcherFilteredMessages_Good_UsesAnyActiveFilter(t *testing.T) {
 	}
 }
 
-// TestConsoleWatcherSetLimit_Good_TrimsExistingMessages verifies shrinking the limit trims buffered messages immediately.
-func TestConsoleWatcherSetLimit_Good_TrimsExistingMessages(t *testing.T) {
+// TestConsoleWatcherSetLimit_Good_AppliesToFutureWrites verifies shrinking the limit trims buffered messages on the next append.
+func TestConsoleWatcherSetLimit_Good_AppliesToFutureWrites(t *testing.T) {
 	cw := &ConsoleWatcher{
 		messages: []ConsoleMessage{
 			{Type: "log", Text: "first"},
@@ -823,11 +823,17 @@ func TestConsoleWatcherSetLimit_Good_TrimsExistingMessages(t *testing.T) {
 
 	cw.SetLimit(2)
 
-	if cw.Count() != 2 {
-		t.Fatalf("Expected 2 messages after trimming, got %d", cw.Count())
+	if cw.Count() != 3 {
+		t.Fatalf("Expected 3 messages to remain until the next append, got %d", cw.Count())
 	}
-	if messages := cw.Messages(); messages[0].Text != "second" || messages[1].Text != "third" {
-		t.Fatalf("Unexpected retained messages: %#v", messages)
+
+	cw.addMessage(ConsoleMessage{Type: "log", Text: "fourth"})
+
+	if cw.Count() != 2 {
+		t.Fatalf("Expected 2 messages after the next append, got %d", cw.Count())
+	}
+	if messages := cw.Messages(); messages[0].Text != "third" || messages[1].Text != "fourth" {
+		t.Fatalf("Unexpected retained messages after trimming: %#v", messages)
 	}
 }
 

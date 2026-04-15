@@ -217,7 +217,7 @@ func (cw *ConsoleWatcher) removeHandler(id int64) {
 	}
 }
 
-// SetLimit sets the maximum number of messages to retain.
+// SetLimit replaces the retention limit for future appends.
 func (cw *ConsoleWatcher) SetLimit(limit int) {
 	cw.mu.Lock()
 	defer cw.mu.Unlock()
@@ -225,7 +225,6 @@ func (cw *ConsoleWatcher) SetLimit(limit int) {
 		limit = 0
 	}
 	cw.limit = limit
-	cw.messages = trimConsoleMessages(cw.messages, cw.limit)
 }
 
 // Messages returns all captured messages.

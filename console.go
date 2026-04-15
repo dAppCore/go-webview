@@ -41,7 +41,7 @@ type consoleHandlerRegistration struct {
 
 // NewConsoleWatcher creates a new console watcher for the webview.
 func NewConsoleWatcher(wv *Webview) *ConsoleWatcher {
-	cw := &ConsoleWatcher{
+	watcher := &ConsoleWatcher{
 		wv:       wv,
 		messages: make([]ConsoleMessage, 0, 1000),
 		filters:  make([]ConsoleFilter, 0),
@@ -51,10 +51,10 @@ func NewConsoleWatcher(wv *Webview) *ConsoleWatcher {
 
 	// Subscribe to console events from the webview's client
 	wv.client.OnEvent("Runtime.consoleAPICalled", func(params map[string]any) {
-		cw.handleConsoleEvent(params)
+		watcher.handleConsoleEvent(params)
 	})
 
-	return cw
+	return watcher
 }
 
 // normalizeConsoleType converts CDP event types to package-level values.
@@ -128,15 +128,8 @@ func consoleValueToString(value any) string {
 	return core.Sprint(value)
 }
 
-func consoleMessageTimestamp(params map[string]any) time.Time {
-	timestamp, ok := params["timestamp"].(float64)
-	if !ok {
-		return time.Now()
-	}
-
-	seconds := int64(timestamp)
-	nanoseconds := int64((timestamp - float64(seconds)) * float64(time.Second))
-	return time.Unix(seconds, nanoseconds).UTC()
+func consoleCaptureTimestamp() time.Time {
+	return time.Now()
 }
 
 func trimConsoleMessages(messages []ConsoleMessage, limit int) []ConsoleMessage {
@@ -324,11 +317,11 @@ func (cw *ConsoleWatcher) WaitForMessage(ctx context.Context, filter ConsoleFilt
 	cw.mu.RUnlock()
 
 	// Set up a channel for new messages
-	msgCh := make(chan ConsoleMessage, 1)
+	messageCh := make(chan ConsoleMessage, 1)
 	handler := func(msg ConsoleMessage) {
 		if cw.matchesSingleFilter(msg, filter) {
 			select {
-			case msgCh <- msg:
+			case messageCh <- msg:
 			default:
 			}
 		}
@@ -340,7 +333,7 @@ func (cw *ConsoleWatcher) WaitForMessage(ctx context.Context, filter ConsoleFilt
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
-	case msg := <-msgCh:
+	case msg := <-messageCh:
 		return &msg, nil
 	}
 }
@@ -409,7 +402,7 @@ func (cw *ConsoleWatcher) handleConsoleEvent(params map[string]any) {
 	msg := ConsoleMessage{
 		Type:      msgType,
 		Text:      text,
-		Timestamp: consoleMessageTimestamp(params),
+		Timestamp: consoleCaptureTimestamp(),
 		URL:       url,
 		Line:      line,
 		Column:    column,

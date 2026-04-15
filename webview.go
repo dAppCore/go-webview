@@ -520,7 +520,7 @@ func (wv *Webview) handleConsoleEvent(params map[string]any) {
 	wv.addConsoleMessage(ConsoleMessage{
 		Type:      msgType,
 		Text:      text,
-		Timestamp: consoleMessageTimestamp(params),
+		Timestamp: consoleCaptureTimestamp(),
 		URL:       url,
 		Line:      line,
 		Column:    column,

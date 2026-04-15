@@ -461,6 +461,76 @@ func (s *ActionSequence) WaitForSelector(selector string) *ActionSequence {
 	return s.Add(WaitForSelectorAction{Selector: selector})
 }
 
+// Scroll adds a scroll action.
+func (s *ActionSequence) Scroll(x, y int) *ActionSequence {
+	return s.Add(ScrollAction{X: x, Y: y})
+}
+
+// ScrollIntoView adds a scroll-into-view action.
+func (s *ActionSequence) ScrollIntoView(selector string) *ActionSequence {
+	return s.Add(ScrollIntoViewAction{Selector: selector})
+}
+
+// Focus adds a focus action.
+func (s *ActionSequence) Focus(selector string) *ActionSequence {
+	return s.Add(FocusAction{Selector: selector})
+}
+
+// Blur adds a blur action.
+func (s *ActionSequence) Blur(selector string) *ActionSequence {
+	return s.Add(BlurAction{Selector: selector})
+}
+
+// Clear adds a clear action.
+func (s *ActionSequence) Clear(selector string) *ActionSequence {
+	return s.Add(ClearAction{Selector: selector})
+}
+
+// Select adds a select action.
+func (s *ActionSequence) Select(selector, value string) *ActionSequence {
+	return s.Add(SelectAction{Selector: selector, Value: value})
+}
+
+// Check adds a check action.
+func (s *ActionSequence) Check(selector string, checked bool) *ActionSequence {
+	return s.Add(CheckAction{Selector: selector, Checked: checked})
+}
+
+// Hover adds a hover action.
+func (s *ActionSequence) Hover(selector string) *ActionSequence {
+	return s.Add(HoverAction{Selector: selector})
+}
+
+// DoubleClick adds a double-click action.
+func (s *ActionSequence) DoubleClick(selector string) *ActionSequence {
+	return s.Add(DoubleClickAction{Selector: selector})
+}
+
+// RightClick adds a right-click action.
+func (s *ActionSequence) RightClick(selector string) *ActionSequence {
+	return s.Add(RightClickAction{Selector: selector})
+}
+
+// PressKey adds a key press action.
+func (s *ActionSequence) PressKey(key string) *ActionSequence {
+	return s.Add(PressKeyAction{Key: key})
+}
+
+// SetAttribute adds a set-attribute action.
+func (s *ActionSequence) SetAttribute(selector, attribute, value string) *ActionSequence {
+	return s.Add(SetAttributeAction{Selector: selector, Attribute: attribute, Value: value})
+}
+
+// RemoveAttribute adds a remove-attribute action.
+func (s *ActionSequence) RemoveAttribute(selector, attribute string) *ActionSequence {
+	return s.Add(RemoveAttributeAction{Selector: selector, Attribute: attribute})
+}
+
+// SetValue adds a set-value action.
+func (s *ActionSequence) SetValue(selector, value string) *ActionSequence {
+	return s.Add(SetValueAction{Selector: selector, Value: value})
+}
+
 // Execute executes all actions in the sequence.
 func (s *ActionSequence) Execute(ctx context.Context, wv *Webview) error {
 	for i, action := range s.actions {

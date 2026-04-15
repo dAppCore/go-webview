@@ -150,6 +150,52 @@ func TestActionSequence_Good(t *testing.T) {
 	}
 }
 
+// TestActionSequence_Good_AllBuilders verifies every fluent builder appends the expected action.
+func TestActionSequence_Good_AllBuilders(t *testing.T) {
+	seq := NewActionSequence().
+		Scroll(0, 500).
+		ScrollIntoView("#target").
+		Focus("#input").
+		Blur("#input").
+		Clear("#input").
+		Select("#dropdown", "option1").
+		Check("#checkbox", true).
+		Hover("#menu-item").
+		DoubleClick("#editable").
+		RightClick("#context-menu-trigger").
+		PressKey("Enter").
+		SetAttribute("#element", "data-value", "test").
+		RemoveAttribute("#element", "disabled").
+		SetValue("#input", "new value")
+
+	if len(seq.actions) != 14 {
+		t.Fatalf("Expected 14 actions, got %d", len(seq.actions))
+	}
+
+	wantTypes := []any{
+		ScrollAction{X: 0, Y: 500},
+		ScrollIntoViewAction{Selector: "#target"},
+		FocusAction{Selector: "#input"},
+		BlurAction{Selector: "#input"},
+		ClearAction{Selector: "#input"},
+		SelectAction{Selector: "#dropdown", Value: "option1"},
+		CheckAction{Selector: "#checkbox", Checked: true},
+		HoverAction{Selector: "#menu-item"},
+		DoubleClickAction{Selector: "#editable"},
+		RightClickAction{Selector: "#context-menu-trigger"},
+		PressKeyAction{Key: "Enter"},
+		SetAttributeAction{Selector: "#element", Attribute: "data-value", Value: "test"},
+		RemoveAttributeAction{Selector: "#element", Attribute: "disabled"},
+		SetValueAction{Selector: "#input", Value: "new value"},
+	}
+
+	for i, want := range wantTypes {
+		if got := seq.actions[i]; got != want {
+			t.Fatalf("action %d = %#v, want %#v", i, got, want)
+		}
+	}
+}
+
 // TestClickAction_Good verifies ClickAction struct.
 func TestClickAction_Good(t *testing.T) {
 	action := ClickAction{Selector: "#submit"}

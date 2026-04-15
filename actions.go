@@ -58,10 +58,13 @@ type WaitAction struct {
 
 // Execute performs the wait action.
 func (a WaitAction) Execute(ctx context.Context, wv *Webview) error {
+	timer := time.NewTimer(a.Duration)
+	defer timer.Stop()
+
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case <-time.After(a.Duration):
+	case <-timer.C:
 		return nil
 	}
 }

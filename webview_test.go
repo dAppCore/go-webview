@@ -371,6 +371,41 @@ func TestFormatConsoleOutput_Good_Empty(t *testing.T) {
 	}
 }
 
+// TestNormalizeConsoleType_Good verifies CDP warning aliases are normalised.
+func TestNormalizeConsoleType_Good(t *testing.T) {
+	if got := normalizeConsoleType("warn"); got != "warning" {
+		t.Fatalf("normalizeConsoleType(\"warn\") = %q, want %q", got, "warning")
+	}
+	if got := normalizeConsoleType("WARNING"); got != "warning" {
+		t.Fatalf("normalizeConsoleType(\"WARNING\") = %q, want %q", got, "warning")
+	}
+}
+
+// TestWebviewHandleConsoleEvent_Good_NormalizesWarningType verifies CDP warn events are stored as warnings.
+func TestWebviewHandleConsoleEvent_Good_NormalizesWarningType(t *testing.T) {
+	wv := &Webview{
+		consoleLogs:  make([]ConsoleMessage, 0),
+		consoleLimit: 10,
+	}
+
+	wv.handleConsoleEvent(map[string]any{
+		"type": "warn",
+		"args": []any{
+			map[string]any{"value": "deprecated"},
+		},
+	})
+
+	if len(wv.consoleLogs) != 1 {
+		t.Fatalf("Expected one console message, got %d", len(wv.consoleLogs))
+	}
+	if wv.consoleLogs[0].Type != "warning" {
+		t.Fatalf("Expected warning type, got %q", wv.consoleLogs[0].Type)
+	}
+	if wv.consoleLogs[0].Text != "deprecated" {
+		t.Fatalf("Expected text %q, got %q", "deprecated", wv.consoleLogs[0].Text)
+	}
+}
+
 // TestContainsString_Good verifies substring matching.
 func TestContainsString_Good(t *testing.T) {
 	tests := []struct {

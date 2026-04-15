@@ -60,6 +60,9 @@ func NewConsoleWatcher(wv *Webview) *ConsoleWatcher {
 // normalizeConsoleType converts CDP event types to package-level values.
 func normalizeConsoleType(raw string) string {
 	normalized := strings.ToLower(core.Trim(core.Sprint(raw)))
+	if normalized == "warn" {
+		return "warning"
+	}
 	return normalized
 }
 

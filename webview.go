@@ -171,11 +171,19 @@ func (wv *Webview) Navigate(url string) error {
 	ctx, cancel := context.WithTimeout(wv.ctx, wv.timeout)
 	defer cancel()
 
+	return wv.navigate(ctx, url, "Webview.Navigate")
+}
+
+func (wv *Webview) navigate(ctx context.Context, rawURL, scope string) error {
+	if err := validateNavigationURL(rawURL); err != nil {
+		return coreerr.E(scope, "invalid navigation URL", err)
+	}
+
 	_, err := wv.client.Call(ctx, "Page.navigate", map[string]any{
-		"url": url,
+		"url": rawURL,
 	})
 	if err != nil {
-		return coreerr.E("Webview.Navigate", "failed to navigate", err)
+		return coreerr.E(scope, "failed to navigate", err)
 	}
 
 	// Wait for page load

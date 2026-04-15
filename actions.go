@@ -42,13 +42,7 @@ type NavigateAction struct {
 
 // Execute performs the navigate action.
 func (a NavigateAction) Execute(ctx context.Context, wv *Webview) error {
-	_, err := wv.client.Call(ctx, "Page.navigate", map[string]any{
-		"url": a.URL,
-	})
-	if err != nil {
-		return coreerr.E("NavigateAction.Execute", "failed to navigate", err)
-	}
-	return wv.waitForLoad(ctx)
+	return wv.navigate(ctx, a.URL, "NavigateAction.Execute")
 }
 
 // WaitAction represents a wait action.

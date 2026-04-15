@@ -3,6 +3,7 @@ package webview
 
 import (
 	"context"
+	"io"
 	"iter"
 	"net"
 	"net/http"
@@ -20,6 +21,8 @@ import (
 )
 
 const debugEndpointTimeout = 10 * time.Second
+const maxDebugResponseBytes = 1 << 20
+const maxCDPMessageBytes = 16 << 20
 
 var (
 	defaultDebugHTTPClient = &http.Client{
@@ -141,6 +144,7 @@ func NewCDPClient(debugURL string) (*CDPClient, error) {
 	if err != nil {
 		return nil, coreerr.E("CDPClient.New", "failed to connect to WebSocket", err)
 	}
+	conn.SetReadLimit(maxCDPMessageBytes)
 
 	return newCDPClient(debugHTTPURL, wsURL, conn), nil
 }
@@ -401,6 +405,7 @@ func GetVersion(debugURL string) (map[string]string, error) {
 func newCDPClient(debugHTTPURL *url.URL, wsURL string, conn *websocket.Conn) *CDPClient {
 	ctx, cancel := context.WithCancel(context.Background())
 	baseCopy := *debugHTTPURL
+	conn.SetReadLimit(maxCDPMessageBytes)
 
 	client := &CDPClient{
 		conn:         conn,
@@ -442,7 +447,22 @@ func parseDebugURL(raw string) (*url.URL, error) {
 	if debugURL.Path != "/" {
 		return nil, coreerr.E("CDPClient.parseDebugURL", "debug URL must point at the DevTools root", nil)
 	}
+	if !isLoopbackHost(debugURL.Hostname()) {
+		return nil, coreerr.E("CDPClient.parseDebugURL", "debug URL host must be localhost or loopback", nil)
+	}
 	return debugURL, nil
+}
+
+func isLoopbackHost(host string) bool {
+	if host == "" {
+		return false
+	}
+	if core.Lower(host) == "localhost" {
+		return true
+	}
+
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func canonicalDebugURL(debugURL *url.URL) string {
@@ -467,15 +487,19 @@ func doDebugRequest(ctx context.Context, debugHTTPURL *url.URL, endpoint, rawQue
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	r := core.ReadAll(resp.Body)
-	if !r.OK {
-		return nil, r.Value.(error)
-	}
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return nil, coreerr.E("CDPClient.doDebugRequest", "debug endpoint returned "+resp.Status, nil)
 	}
 
-	return []byte(r.Value.(string)), nil
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxDebugResponseBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(body) > maxDebugResponseBytes {
+		return nil, coreerr.E("CDPClient.doDebugRequest", "debug endpoint response too large", nil)
+	}
+
+	return body, nil
 }
 
 func listTargetsAt(ctx context.Context, debugHTTPURL *url.URL) ([]TargetInfo, error) {
@@ -493,6 +517,12 @@ func listTargetsAt(ctx context.Context, debugHTTPURL *url.URL) ([]TargetInfo, er
 }
 
 func createTargetAt(ctx context.Context, debugHTTPURL *url.URL, pageURL string) (*TargetInfo, error) {
+	if pageURL != "" {
+		if err := validateNavigationURL(pageURL); err != nil {
+			return nil, coreerr.E("CDPClient.createTargetAt", "invalid page URL", err)
+		}
+	}
+
 	rawQuery := ""
 	if pageURL != "" {
 		rawQuery = url.QueryEscape(pageURL)
@@ -523,6 +553,31 @@ func validateTargetWebSocketURL(debugHTTPURL *url.URL, raw string) (string, erro
 		return "", coreerr.E("CDPClient.validateTargetWebSocketURL", "target WebSocket URL must match debug URL host", nil)
 	}
 	return wsURL.String(), nil
+}
+
+func validateNavigationURL(raw string) error {
+	navigationURL, err := url.Parse(raw)
+	if err != nil {
+		return err
+	}
+
+	switch core.Lower(navigationURL.Scheme) {
+	case "http", "https":
+		if navigationURL.Host == "" {
+			return coreerr.E("CDPClient.validateNavigationURL", "navigation URL host is required", nil)
+		}
+		if navigationURL.User != nil {
+			return coreerr.E("CDPClient.validateNavigationURL", "navigation URL must not include credentials", nil)
+		}
+		return nil
+	case "about":
+		if raw == "about:blank" {
+			return nil
+		}
+		return coreerr.E("CDPClient.validateNavigationURL", "only about:blank is permitted for non-http navigation", nil)
+	default:
+		return coreerr.E("CDPClient.validateNavigationURL", "navigation URL must use http, https, or about:blank", nil)
+	}
 }
 
 func sameEndpointHost(httpURL, wsURL *url.URL) bool {

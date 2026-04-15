@@ -3,6 +3,10 @@ package webview
 
 import (
 	"context"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -417,6 +421,24 @@ func TestFormatConsoleOutput_Good_Empty(t *testing.T) {
 	}
 }
 
+// TestFormatConsoleOutput_Good_SanitisesControlCharacters verifies console output is safe for log sinks.
+func TestFormatConsoleOutput_Good_SanitisesControlCharacters(t *testing.T) {
+	output := FormatConsoleOutput([]ConsoleMessage{
+		{
+			Type:      "error",
+			Text:      "first line\nsecond line\x1b[31m",
+			Timestamp: time.Date(2026, 1, 15, 14, 30, 45, 0, time.UTC),
+		},
+	})
+
+	if !containsString(output, `first line\nsecond line\x1b[31m`) {
+		t.Fatalf("expected control characters to be escaped, got %q", output)
+	}
+	if containsString(output, "\nsecond line") {
+		t.Fatalf("expected embedded newlines to be escaped, got %q", output)
+	}
+}
+
 // TestNormalizeConsoleType_Good verifies CDP warning aliases are normalised.
 func TestNormalizeConsoleType_Good(t *testing.T) {
 	if got := normalizeConsoleType("warn"); got != "warn" {
@@ -518,6 +540,82 @@ func TestFormatJSValue_Good(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("formatJSValue(%v) = %q, want %q", tc.input, got, tc.want)
 		}
+	}
+}
+
+// TestParseDebugURL_Bad_RejectsRemoteHosts verifies debug endpoints are loopback-only.
+func TestParseDebugURL_Bad_RejectsRemoteHosts(t *testing.T) {
+	for _, raw := range []string{
+		"http://example.com:9222",
+		"http://10.0.0.1:9222",
+		"http://[2001:db8::1]:9222",
+	} {
+		if _, err := parseDebugURL(raw); err == nil {
+			t.Fatalf("parseDebugURL(%q) returned nil error", raw)
+		}
+	}
+}
+
+// TestParseDebugURL_Good_AllowsLoopbackHosts verifies local debugging endpoints remain usable.
+func TestParseDebugURL_Good_AllowsLoopbackHosts(t *testing.T) {
+	for _, raw := range []string{
+		"http://localhost:9222",
+		"http://127.0.0.1:9222",
+		"http://[::1]:9222",
+	} {
+		if _, err := parseDebugURL(raw); err != nil {
+			t.Fatalf("parseDebugURL(%q) returned error: %v", raw, err)
+		}
+	}
+}
+
+// TestValidateNavigationURL_Good_AllowsWebURLs verifies navigation accepts HTTP(S) pages.
+func TestValidateNavigationURL_Good_AllowsWebURLs(t *testing.T) {
+	for _, raw := range []string{
+		"https://example.com",
+		"http://localhost:8080/path?q=1",
+		"about:blank",
+	} {
+		if err := validateNavigationURL(raw); err != nil {
+			t.Fatalf("validateNavigationURL(%q) returned error: %v", raw, err)
+		}
+	}
+}
+
+// TestValidateNavigationURL_Bad_RejectsDangerousSchemes verifies non-web schemes are blocked.
+func TestValidateNavigationURL_Bad_RejectsDangerousSchemes(t *testing.T) {
+	for _, raw := range []string{
+		"javascript:alert(1)",
+		"data:text/html,hello",
+		"file:///etc/passwd",
+		"about:srcdoc",
+		"ftp://example.com",
+	} {
+		if err := validateNavigationURL(raw); err == nil {
+			t.Fatalf("validateNavigationURL(%q) returned nil error", raw)
+		}
+	}
+}
+
+// TestDoDebugRequest_Bad_RejectsOversizedBody verifies debug responses are bounded.
+func TestDoDebugRequest_Bad_RejectsOversizedBody(t *testing.T) {
+	var payload strings.Builder
+	payload.Grow(maxDebugResponseBytes + 1)
+	payload.WriteString(strings.Repeat("a", maxDebugResponseBytes+1))
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, payload.String())
+	}))
+	t.Cleanup(server.Close)
+
+	debugURL, err := parseDebugURL(server.URL)
+	if err != nil {
+		t.Fatalf("parseDebugURL returned error: %v", err)
+	}
+
+	if _, err := doDebugRequest(context.Background(), debugURL, "/json", ""); err == nil {
+		t.Fatal("doDebugRequest returned nil error for oversized body")
 	}
 }
 

@@ -719,7 +719,33 @@ func FormatConsoleOutput(messages []ConsoleMessage) string {
 			prefix = "[LOG]"
 		}
 		timestamp := msg.Timestamp.Format("15:04:05.000")
-		output.WriteString(core.Sprintf("%s %s %s\n", timestamp, prefix, msg.Text))
+		output.WriteString(core.Sprintf("%s %s %s\n", timestamp, prefix, sanitizeConsoleText(msg.Text)))
 	}
 	return output.String()
+}
+
+func sanitizeConsoleText(text string) string {
+	var b strings.Builder
+	b.Grow(len(text))
+
+	for _, r := range text {
+		switch r {
+		case '\n':
+			b.WriteString(`\n`)
+		case '\r':
+			b.WriteString(`\r`)
+		case '\t':
+			b.WriteString(`\t`)
+		case '\x1b':
+			b.WriteString(`\x1b`)
+		default:
+			if r < 0x20 || r == 0x7f {
+				b.WriteByte(' ')
+				continue
+			}
+			b.WriteRune(r)
+		}
+	}
+
+	return b.String()
 }

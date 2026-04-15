@@ -47,7 +47,7 @@ type Webview struct {
 
 // ConsoleMessage represents a captured console log message.
 type ConsoleMessage struct {
-	Type      string    `json:"type"`      // log, warning, error, info, debug
+	Type      string    `json:"type"`      // log, warn, error, info, debug
 	Text      string    `json:"text"`      // Message text
 	Timestamp time.Time `json:"timestamp"` // When the message was logged
 	URL       string    `json:"url"`       // Source URL

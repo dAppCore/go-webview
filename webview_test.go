@@ -373,15 +373,15 @@ func TestFormatConsoleOutput_Good_Empty(t *testing.T) {
 
 // TestNormalizeConsoleType_Good verifies CDP warning aliases are normalised.
 func TestNormalizeConsoleType_Good(t *testing.T) {
-	if got := normalizeConsoleType("warn"); got != "warning" {
-		t.Fatalf("normalizeConsoleType(\"warn\") = %q, want %q", got, "warning")
+	if got := normalizeConsoleType("warn"); got != "warn" {
+		t.Fatalf("normalizeConsoleType(\"warn\") = %q, want %q", got, "warn")
 	}
-	if got := normalizeConsoleType("WARNING"); got != "warning" {
-		t.Fatalf("normalizeConsoleType(\"WARNING\") = %q, want %q", got, "warning")
+	if got := normalizeConsoleType("WARNING"); got != "warn" {
+		t.Fatalf("normalizeConsoleType(\"WARNING\") = %q, want %q", got, "warn")
 	}
 }
 
-// TestWebviewHandleConsoleEvent_Good_NormalizesWarningType verifies CDP warn events are stored as warnings.
+// TestWebviewHandleConsoleEvent_Good_NormalizesWarningType verifies CDP warning aliases are stored as warn.
 func TestWebviewHandleConsoleEvent_Good_NormalizesWarningType(t *testing.T) {
 	wv := &Webview{
 		consoleLogs:  make([]ConsoleMessage, 0),
@@ -398,8 +398,8 @@ func TestWebviewHandleConsoleEvent_Good_NormalizesWarningType(t *testing.T) {
 	if len(wv.consoleLogs) != 1 {
 		t.Fatalf("Expected one console message, got %d", len(wv.consoleLogs))
 	}
-	if wv.consoleLogs[0].Type != "warning" {
-		t.Fatalf("Expected warning type, got %q", wv.consoleLogs[0].Type)
+	if wv.consoleLogs[0].Type != "warn" {
+		t.Fatalf("Expected warn type, got %q", wv.consoleLogs[0].Type)
 	}
 	if wv.consoleLogs[0].Text != "deprecated" {
 		t.Fatalf("Expected text %q, got %q", "deprecated", wv.consoleLogs[0].Text)
@@ -620,8 +620,13 @@ func TestConsoleWatcherFilter_Good(t *testing.T) {
 	if !cw.matchesFilter(ConsoleMessage{Type: "warning", Text: "deprecated"}) {
 		t.Error("Expected warning message to match warning filter")
 	}
-	if cw.matchesFilter(ConsoleMessage{Type: "warn", Text: "deprecated"}) {
-		t.Error("Expected warn message not to match warning filter")
+	if !cw.matchesFilter(ConsoleMessage{Type: "warn", Text: "deprecated"}) {
+		t.Error("Expected warn message to match warning filter")
+	}
+	cw.ClearFilters()
+	cw.AddFilter(ConsoleFilter{Type: "warn"})
+	if !cw.matchesFilter(ConsoleMessage{Type: "warning", Text: "deprecated"}) {
+		t.Error("Expected warning message to match warn filter")
 	}
 }
 
@@ -633,7 +638,7 @@ func TestConsoleWatcherCounts_Good(t *testing.T) {
 			{Type: "error", Text: "err 1"},
 			{Type: "log", Text: "info 2"},
 			{Type: "error", Text: "err 2"},
-			{Type: "warning", Text: "warn 1"},
+			{Type: "warn", Text: "warn 1"},
 		},
 		filters:  make([]ConsoleFilter, 0),
 		limit:    1000,

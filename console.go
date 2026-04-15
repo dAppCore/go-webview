@@ -60,8 +60,8 @@ func NewConsoleWatcher(wv *Webview) *ConsoleWatcher {
 // normalizeConsoleType converts CDP event types to package-level values.
 func normalizeConsoleType(raw string) string {
 	normalized := strings.ToLower(core.Trim(core.Sprint(raw)))
-	if normalized == "warn" {
-		return "warning"
+	if normalized == "warning" {
+		return "warn"
 	}
 	return normalized
 }
@@ -291,7 +291,7 @@ func (cw *ConsoleWatcher) WarningsAll() iter.Seq[ConsoleMessage] {
 		defer cw.mu.RUnlock()
 
 		for _, msg := range cw.messages {
-			if msg.Type == "warning" {
+			if isWarningType(msg.Type) {
 				if !yield(msg) {
 					return
 				}
@@ -450,8 +450,16 @@ func (cw *ConsoleWatcher) matchesFilter(msg ConsoleMessage) bool {
 
 // matchesSingleFilter checks if a message matches a specific filter.
 func (cw *ConsoleWatcher) matchesSingleFilter(msg ConsoleMessage, filter ConsoleFilter) bool {
-	if filter.Type != "" && msg.Type != filter.Type {
-		return false
+	if filter.Type != "" {
+		filterType := normalizeConsoleType(filter.Type)
+		messageType := normalizeConsoleType(msg.Type)
+		if isWarningType(filterType) {
+			if !isWarningType(messageType) {
+				return false
+			}
+		} else if messageType != filterType {
+			return false
+		}
 	}
 	if filter.Pattern != "" {
 		// Simple substring match
@@ -460,6 +468,10 @@ func (cw *ConsoleWatcher) matchesSingleFilter(msg ConsoleMessage, filter Console
 		}
 	}
 	return true
+}
+
+func isWarningType(messageType string) bool {
+	return messageType == "warn" || messageType == "warning"
 }
 
 // containsString checks if s contains substr (case-sensitive).
@@ -675,7 +687,7 @@ func FormatConsoleOutput(messages []ConsoleMessage) string {
 		switch normalizeConsoleType(msg.Type) {
 		case "error":
 			prefix = "[ERROR]"
-		case "warning", "warn":
+		case "warn":
 			prefix = "[WARN]"
 		case "info":
 			prefix = "[INFO]"

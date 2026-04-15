@@ -58,10 +58,22 @@ func NewConsoleWatcher(wv *Webview) *ConsoleWatcher {
 }
 
 // normalizeConsoleType converts CDP event types to package-level values.
+//
+// This keeps the legacy warn alias for compatibility. Use canonicalConsoleType
+// when the exact RFC type names are required.
 func normalizeConsoleType(raw string) string {
 	normalized := strings.ToLower(core.Trim(core.Sprint(raw)))
 	if normalized == "warning" {
 		return "warn"
+	}
+	return normalized
+}
+
+// canonicalConsoleType returns the RFC-canonical console type name.
+func canonicalConsoleType(raw string) string {
+	normalized := strings.ToLower(core.Trim(core.Sprint(raw)))
+	if normalized == "warn" || normalized == "warning" {
+		return "warning"
 	}
 	return normalized
 }
@@ -270,7 +282,7 @@ func (cw *ConsoleWatcher) ErrorsAll() iter.Seq[ConsoleMessage] {
 		defer cw.mu.RUnlock()
 
 		for _, msg := range cw.messages {
-			if msg.Type == "error" {
+			if canonicalConsoleType(msg.Type) == "error" {
 				if !yield(msg) {
 					return
 				}
@@ -291,7 +303,7 @@ func (cw *ConsoleWatcher) WarningsAll() iter.Seq[ConsoleMessage] {
 		defer cw.mu.RUnlock()
 
 		for _, msg := range cw.messages {
-			if isWarningType(msg.Type) {
+			if canonicalConsoleType(msg.Type) == "warning" {
 				if !yield(msg) {
 					return
 				}
@@ -352,7 +364,7 @@ func (cw *ConsoleWatcher) HasErrors() bool {
 	defer cw.mu.RUnlock()
 
 	for _, msg := range cw.messages {
-		if msg.Type == "error" {
+		if canonicalConsoleType(msg.Type) == "error" {
 			return true
 		}
 	}
@@ -373,7 +385,7 @@ func (cw *ConsoleWatcher) ErrorCount() int {
 
 	count := 0
 	for _, msg := range cw.messages {
-		if msg.Type == "error" {
+		if canonicalConsoleType(msg.Type) == "error" {
 			count++
 		}
 	}
@@ -382,7 +394,7 @@ func (cw *ConsoleWatcher) ErrorCount() int {
 
 // handleConsoleEvent processes incoming console events.
 func (cw *ConsoleWatcher) handleConsoleEvent(params map[string]any) {
-	msgType := normalizeConsoleType(core.Sprint(params["type"]))
+	msgType := canonicalConsoleType(core.Sprint(params["type"]))
 
 	// Extract args
 	args, _ := params["args"].([]any)
@@ -451,13 +463,9 @@ func (cw *ConsoleWatcher) matchesFilter(msg ConsoleMessage) bool {
 // matchesSingleFilter checks if a message matches a specific filter.
 func (cw *ConsoleWatcher) matchesSingleFilter(msg ConsoleMessage, filter ConsoleFilter) bool {
 	if filter.Type != "" {
-		filterType := normalizeConsoleType(filter.Type)
-		messageType := normalizeConsoleType(msg.Type)
-		if isWarningType(filterType) {
-			if !isWarningType(messageType) {
-				return false
-			}
-		} else if messageType != filterType {
+		filterType := canonicalConsoleType(filter.Type)
+		messageType := canonicalConsoleType(msg.Type)
+		if messageType != filterType {
 			return false
 		}
 	}
@@ -471,7 +479,7 @@ func (cw *ConsoleWatcher) matchesSingleFilter(msg ConsoleMessage, filter Console
 }
 
 func isWarningType(messageType string) bool {
-	return messageType == "warn" || messageType == "warning"
+	return canonicalConsoleType(messageType) == "warning"
 }
 
 // containsString checks if s contains substr (case-sensitive).
@@ -684,10 +692,10 @@ func FormatConsoleOutput(messages []ConsoleMessage) string {
 	output := core.NewBuilder()
 	for _, msg := range messages {
 		prefix := ""
-		switch normalizeConsoleType(msg.Type) {
+		switch canonicalConsoleType(msg.Type) {
 		case "error":
 			prefix = "[ERROR]"
-		case "warn":
+		case "warning":
 			prefix = "[WARN]"
 		case "info":
 			prefix = "[INFO]"

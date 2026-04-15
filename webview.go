@@ -594,7 +594,7 @@ func (wv *Webview) evaluate(ctx context.Context, script string) (any, error) {
 		return resultObj["value"], nil
 	}
 
-	return nil, nil
+	return nil, coreerr.E("Webview.evaluate", "missing evaluation result", nil)
 }
 
 // querySelector finds an element by selector.

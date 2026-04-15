@@ -535,7 +535,7 @@ func (s *ActionSequence) SetValue(selector, value string) *ActionSequence {
 func (s *ActionSequence) Execute(ctx context.Context, wv *Webview) error {
 	for i, action := range s.actions {
 		if err := action.Execute(ctx, wv); err != nil {
-			return coreerr.E("ActionSequence.Execute", core.Sprintf("action %d failed", i), err)
+			return coreerr.E("ActionSequence.Execute", core.Sprintf("action index %d failed", i), err)
 		}
 	}
 	return nil
@@ -549,7 +549,7 @@ func (wv *Webview) UploadFile(selector string, filePaths []string) error {
 	// Get the element's node ID
 	elem, err := wv.querySelector(ctx, selector)
 	if err != nil {
-		return err
+		return coreerr.E("Webview.UploadFile", "failed to find file input", err)
 	}
 
 	// Use DOM.setFileInputFiles to set the files
@@ -557,7 +557,10 @@ func (wv *Webview) UploadFile(selector string, filePaths []string) error {
 		"nodeId": elem.NodeID,
 		"files":  filePaths,
 	})
-	return err
+	if err != nil {
+		return coreerr.E("Webview.UploadFile", "failed to upload file", err)
+	}
+	return nil
 }
 
 // DragAndDrop performs a drag and drop operation.
@@ -597,7 +600,7 @@ func (wv *Webview) DragAndDrop(sourceSelector, targetSelector string) error {
 		"clickCount": 1,
 	})
 	if err != nil {
-		return err
+		return coreerr.E("Webview.DragAndDrop", "failed to press source element", err)
 	}
 
 	// Move to target
@@ -608,7 +611,7 @@ func (wv *Webview) DragAndDrop(sourceSelector, targetSelector string) error {
 		"button": "left",
 	})
 	if err != nil {
-		return err
+		return coreerr.E("Webview.DragAndDrop", "failed to move to target element", err)
 	}
 
 	// Mouse up on target
@@ -619,5 +622,8 @@ func (wv *Webview) DragAndDrop(sourceSelector, targetSelector string) error {
 		"button":     "left",
 		"clickCount": 1,
 	})
-	return err
+	if err != nil {
+		return coreerr.E("Webview.DragAndDrop", "failed to release target element", err)
+	}
+	return nil
 }

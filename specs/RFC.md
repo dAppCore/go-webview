@@ -219,6 +219,7 @@ Fields:
 Declaration: `type ExceptionWatcher struct`
 
 Collector for JavaScript exceptions emitted by the bound `Webview`. All fields are unexported.
+New watchers start with an empty exception buffer and a default limit of 1000 stored exceptions. When the limit is exceeded, the oldest entries are trimmed on later writes.
 
 Methods:
 - `AddHandler(handler func(ExceptionInfo))`: Registers a callback for future exception events.
@@ -487,7 +488,7 @@ Creates a `ConsoleWatcher`, initialises an empty message buffer with a 1000-mess
 ### NewExceptionWatcher
 `func NewExceptionWatcher(wv *Webview) *ExceptionWatcher`
 
-Creates an `ExceptionWatcher`, initialises an empty exception buffer, and subscribes it to `Runtime.exceptionThrown` events on `wv.client`.
+Creates an `ExceptionWatcher`, initialises an empty exception buffer with a 1000-exception limit, and subscribes it to `Runtime.exceptionThrown` events on `wv.client`.
 
 ### WithConsoleLimit
 `func WithConsoleLimit(limit int) Option`

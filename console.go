@@ -547,6 +547,7 @@ type ExceptionWatcher struct {
 	mu            sync.RWMutex
 	wv            *Webview
 	exceptions    []ExceptionInfo
+	limit         int
 	handlers      []exceptionHandlerRegistration
 	waiters       []exceptionWaiter
 	nextHandlerID atomic.Int64
@@ -569,6 +570,7 @@ func NewExceptionWatcher(wv *Webview) *ExceptionWatcher {
 	ew := &ExceptionWatcher{
 		wv:         wv,
 		exceptions: make([]ExceptionInfo, 0),
+		limit:      1000,
 		handlers:   make([]exceptionHandlerRegistration, 0),
 	}
 
@@ -735,6 +737,7 @@ func (ew *ExceptionWatcher) handleException(params map[string]any) {
 
 	ew.mu.Lock()
 	ew.exceptions = append(ew.exceptions, info)
+	ew.exceptions = trimExceptionInfos(ew.exceptions, ew.limit)
 	handlers := slices.Clone(ew.handlers)
 	waiters := slices.Clone(ew.waiters)
 	ew.mu.Unlock()
@@ -773,6 +776,19 @@ func FormatConsoleOutput(messages []ConsoleMessage) string {
 		output.WriteString(core.Sprintf("%s %s %s\n", timestamp, prefix, sanitizeConsoleText(msg.Text)))
 	}
 	return output.String()
+}
+
+func trimExceptionInfos(exceptions []ExceptionInfo, limit int) []ExceptionInfo {
+	if limit < 0 {
+		limit = 0
+	}
+
+	if overflow := len(exceptions) - limit; overflow > 0 {
+		copy(exceptions, exceptions[overflow:])
+		exceptions = exceptions[:len(exceptions)-overflow]
+	}
+
+	return exceptions
 }
 
 func sanitizeConsoleText(text string) string {

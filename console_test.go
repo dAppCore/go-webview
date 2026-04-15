@@ -260,6 +260,9 @@ func TestConsole_NewExceptionWatcher_Good(t *testing.T) {
 	if watcher.Count() != 0 {
 		t.Fatalf("NewExceptionWatcher count = %d, want 0", watcher.Count())
 	}
+	if watcher.limit != 1000 {
+		t.Fatalf("NewExceptionWatcher limit = %d, want 1000", watcher.limit)
+	}
 }
 
 func TestConsole_NewExceptionWatcher_Good_SubscribesToClient(t *testing.T) {
@@ -284,6 +287,34 @@ func TestConsole_NewExceptionWatcher_Good_SubscribesToClient(t *testing.T) {
 
 	if watcher.Count() != 1 {
 		t.Fatalf("NewExceptionWatcher subscription count = %d, want 1", watcher.Count())
+	}
+}
+
+func TestConsole_ExceptionWatcherTrimsOldExceptions_Good(t *testing.T) {
+	watcher := &ExceptionWatcher{
+		exceptions: make([]ExceptionInfo, 0),
+		limit:      2,
+		handlers:   make([]exceptionHandlerRegistration, 0),
+	}
+
+	for i := range 3 {
+		watcher.handleException(map[string]any{
+			"exceptionDetails": map[string]any{
+				"text":         string(rune('a' + i)),
+				"lineNumber":   float64(i + 1),
+				"columnNumber": float64(1),
+				"url":          "https://example.com/app.js",
+			},
+		})
+	}
+
+	if got := watcher.Count(); got != 2 {
+		t.Fatalf("ExceptionWatcher count = %d, want 2", got)
+	}
+
+	excs := watcher.Exceptions()
+	if len(excs) != 2 || excs[0].Text != "b" || excs[1].Text != "c" {
+		t.Fatalf("ExceptionWatcher retained %#v, want [b c]", excs)
 	}
 }
 

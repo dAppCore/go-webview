@@ -24,9 +24,9 @@ package webview
 
 import (
 	"context"
-	"encoding/base64"
-	"iter"
-	"slices"
+	"encoding/base64" // Note: intrinsic — CDP Page.captureScreenshot returns PNG as base64-encoded string; stdlib decoder is the protocol requirement
+	"iter"            // Note: intrinsic — stdlib iterator primitive for Seq[ConsoleMessage] / Seq[*ElementInfo] return types
+	"slices"          // Note: intrinsic — slices.Collect materialises console message iterator into a snapshot
 	"sync"
 	"time"
 

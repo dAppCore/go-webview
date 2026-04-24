@@ -3,13 +3,13 @@ package webview
 
 import (
 	"context"
-	"io"
-	"iter"
-	"net"
-	"net/http"
-	"net/url"
-	"path"
-	"slices"
+	"io"       // Note: intrinsic — CDP debug endpoint response body streaming via io.ReadAll/io.LimitReader
+	"iter"     // Note: intrinsic — stdlib iterator primitive for Seq[TargetInfo] return type
+	"net"      // Note: intrinsic — net.Error and net.ParseIP required to classify WebSocket terminal errors and validate loopback hosts
+	"net/http" // Note: intrinsic — CDP exposes its DevTools endpoints over HTTP (/json, /json/new, /json/version); must speak raw HTTP to bootstrap the WebSocket
+	"net/url"  // Note: intrinsic — debug URL, WebSocket URL, and navigation URL validation all require url.Parse/url.URL structural access
+	"path"     // Note: intrinsic — path.Base extracts target ID from WebSocket URL path segment (URL path, not filesystem path)
+	"slices"   // Note: intrinsic — slices.Clone duplicates event handler slice under RLock before dispatch
 	"sync"
 	"sync/atomic"
 	"time"

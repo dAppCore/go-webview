@@ -31,7 +31,7 @@ import (
 	"time"
 
 	core "dappco.re/go/core"
-	coreerr "dappco.re/go/core/log"
+	coreerr "dappco.re/go/log"
 )
 
 // Webview represents a connection to a Chrome DevTools Protocol endpoint.

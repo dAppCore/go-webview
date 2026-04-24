@@ -6,7 +6,7 @@ import (
 	"time"
 
 	core "dappco.re/go/core"
-	coreerr "dappco.re/go/core/log"
+	coreerr "dappco.re/go/log"
 )
 
 // Action represents a browser action that can be performed.

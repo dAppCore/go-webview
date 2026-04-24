@@ -1,0 +1,42 @@
+version: "3"
+
+env:
+  GOWORK: off
+  GOCACHE: /tmp/go-webview-go-build-cache
+
+tasks:
+  build:
+    dir: ../../..
+    cmds:
+      - go build ./...
+
+  test:
+    dir: ../../..
+    cmds:
+      - go test -count=1 -race ./...
+
+  vet:
+    dir: ../../..
+    cmds:
+      - go vet ./...
+
+  test-unit:
+    dir: ../../..
+    cmds:
+      - go test -count=1 -race ./... -run Unit
+
+  test-integration:
+    dir: ../../..
+    cmds:
+      - |
+        if [ -z "${CHROME_ADDR:-}" ]; then
+          echo "Skipping integration tests: CHROME_ADDR unset (requires Chrome on localhost:9222)"
+          exit 0
+        fi
+        go test -count=1 ./... -run Integration -tags integration
+
+  default:
+    deps:
+      - build
+      - test
+      - vet

@@ -5,7 +5,6 @@ import (
 	"context"
 	"iter"
 	"slices"
-	"strings"
 	"sync"        // Note: AX-6 — internal concurrency primitive; structural per RFC §3/§6
 	"sync/atomic" // Note: AX-6 — internal concurrency primitive; structural per RFC §3/§6
 	"time"
@@ -75,7 +74,7 @@ func NewConsoleWatcher(wv *Webview) *ConsoleWatcher {
 // It accepts legacy warning aliases and stores the compact warn form used by
 // the existing console message contract.
 func normalizeConsoleType(raw string) string {
-	normalized := strings.ToLower(core.Trim(core.Sprint(raw)))
+	normalized := core.Lower(core.Trim(core.Sprint(raw)))
 	if normalized == "warn" || normalized == "warning" {
 		return "warn"
 	}
@@ -84,7 +83,7 @@ func normalizeConsoleType(raw string) string {
 
 // canonicalConsoleType returns the RFC-canonical console type name.
 func canonicalConsoleType(raw string) string {
-	normalized := strings.ToLower(core.Trim(core.Sprint(raw)))
+	normalized := core.Lower(core.Trim(core.Sprint(raw)))
 	if normalized == "warn" || normalized == "warning" {
 		return "warning"
 	}
@@ -792,7 +791,7 @@ func trimExceptionInfos(exceptions []ExceptionInfo, limit int) []ExceptionInfo {
 }
 
 func sanitizeConsoleText(text string) string {
-	var b strings.Builder
+	b := core.NewBuilder()
 	b.Grow(len(text))
 
 	for _, r := range text {

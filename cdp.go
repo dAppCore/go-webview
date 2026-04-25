@@ -3,13 +3,12 @@ package webview
 
 import (
 	"context"
-	"io"       // Note: intrinsic — CDP debug endpoint response body streaming via io.ReadAll/io.LimitReader
+	"io"       // Note: AX-6 intrinsic — bounded streaming read from CDP HTTP response bodies; coreio.Medium does not model transient HTTP bodies.
 	"iter"     // Note: intrinsic — stdlib iterator primitive for Seq[TargetInfo] return type
-	"net"      // Note: intrinsic — net.Error and net.ParseIP required to classify WebSocket terminal errors and validate loopback hosts
-	"net/http" // Note: intrinsic — CDP exposes its DevTools endpoints over HTTP (/json, /json/new, /json/version); must speak raw HTTP to bootstrap the WebSocket
-	"net/url"  // Note: intrinsic — debug URL, WebSocket URL, and navigation URL validation all require url.Parse/url.URL structural access
-	"path"     // Note: intrinsic — path.Base extracts target ID from WebSocket URL path segment (URL path, not filesystem path)
-	"slices"   // Note: intrinsic — slices.Clone duplicates event handler slice under RLock before dispatch
+	"net"      // Note: AX-6 intrinsic — loopback IP parsing and terminal network error sentinels; no Core Process context is available here.
+	"net/http" // Note: AX-6 intrinsic — CDP DevTools discovery is an HTTP boundary (/json, /json/new, /json/version); no core HTTP fetch primitive yet.
+	"reflect"
+	"slices" // Note: intrinsic — slices.Clone duplicates event handler slice under RLock before dispatch
 	"sync"
 	"sync/atomic"
 	"time"
@@ -39,7 +38,7 @@ type CDPClient struct {
 	mu           sync.RWMutex
 	conn         *websocket.Conn
 	debugURL     string
-	debugHTTPURL *url.URL
+	debugHTTPURL *cdpURL
 	wsURL        string
 
 	// Message tracking
@@ -93,6 +92,66 @@ type TargetInfo struct {
 	Title                string `json:"title"`
 	URL                  string `json:"url"`
 	WebSocketDebuggerURL string `json:"webSocketDebuggerUrl"`
+}
+
+type coreParsedURL interface {
+	String() string
+	Hostname() string
+	Port() string
+}
+
+type cdpURL struct {
+	Scheme   string
+	Host     string
+	Path     string
+	RawPath  string
+	RawQuery string
+	Fragment string
+
+	hasUser  bool
+	hostname string
+	port     string
+}
+
+func (u *cdpURL) String() string {
+	if u == nil {
+		return ""
+	}
+
+	rawPath := u.Path
+	if u.RawPath != "" {
+		rawPath = u.RawPath
+	}
+
+	out := ""
+	if u.Scheme != "" {
+		out += u.Scheme + ":"
+	}
+	if u.Host != "" {
+		out += "//" + u.Host
+	}
+	out += rawPath
+	if u.RawQuery != "" {
+		out += "?" + u.RawQuery
+	}
+	if u.Fragment != "" {
+		out += "#" + u.Fragment
+	}
+	return out
+}
+
+func (u *cdpURL) Hostname() string {
+	if u == nil {
+		return ""
+	}
+	return u.hostname
+}
+
+func (u *cdpURL) Port() string {
+	if u == nil {
+		return ""
+	}
+	return u.port
 }
 
 // NewCDPClient creates a new CDP client connected to the given debug URL.
@@ -402,7 +461,7 @@ func GetVersion(debugURL string) (map[string]string, error) {
 	return version, nil
 }
 
-func newCDPClient(debugHTTPURL *url.URL, wsURL string, conn *websocket.Conn) *CDPClient {
+func newCDPClient(debugHTTPURL *cdpURL, wsURL string, conn *websocket.Conn) *CDPClient {
 	ctx, cancel := context.WithCancel(context.Background())
 	baseCopy := *debugHTTPURL
 	conn.SetReadLimit(maxCDPMessageBytes)
@@ -424,8 +483,8 @@ func newCDPClient(debugHTTPURL *url.URL, wsURL string, conn *websocket.Conn) *CD
 	return client
 }
 
-func parseDebugURL(raw string) (*url.URL, error) {
-	debugURL, err := url.Parse(raw)
+func parseDebugURL(raw string) (*cdpURL, error) {
+	debugURL, err := parseCoreURL(raw)
 	if err != nil {
 		return nil, err
 	}
@@ -435,7 +494,7 @@ func parseDebugURL(raw string) (*url.URL, error) {
 	if debugURL.Host == "" {
 		return nil, coreerr.E("CDPClient.parseDebugURL", "debug URL host is required", nil)
 	}
-	if debugURL.User != nil {
+	if debugURL.hasUser {
 		return nil, coreerr.E("CDPClient.parseDebugURL", "debug URL must not include credentials", nil)
 	}
 	if debugURL.RawQuery != "" || debugURL.Fragment != "" {
@@ -453,6 +512,89 @@ func parseDebugURL(raw string) (*url.URL, error) {
 	return debugURL, nil
 }
 
+func parseCoreURL(raw string) (*cdpURL, error) {
+	r := core.URLParse(raw)
+	if !r.OK {
+		if err, ok := r.Value.(error); ok {
+			return nil, err
+		}
+		return nil, coreerr.E("CDPClient.parseCoreURL", "failed to parse URL", nil)
+	}
+	return cdpURLFromParsed(r.Value)
+}
+
+func cdpURLFromAny(value any) (*cdpURL, error) {
+	switch v := value.(type) {
+	case *cdpURL:
+		if v == nil {
+			return nil, coreerr.E("CDPClient.cdpURLFromAny", "nil URL", nil)
+		}
+		return v, nil
+	case cdpURL:
+		return &v, nil
+	default:
+		return cdpURLFromParsed(value)
+	}
+}
+
+func cdpURLFromParsed(value any) (*cdpURL, error) {
+	parsed, ok := value.(coreParsedURL)
+	if !ok {
+		return nil, coreerr.E("CDPClient.cdpURLFromParsed", "unsupported parsed URL type", nil)
+	}
+
+	return &cdpURL{
+		Scheme:   urlFieldString(value, "Scheme"),
+		Host:     urlFieldString(value, "Host"),
+		Path:     urlFieldString(value, "Path"),
+		RawPath:  urlFieldString(value, "RawPath"),
+		RawQuery: urlFieldString(value, "RawQuery"),
+		Fragment: urlFieldString(value, "Fragment"),
+		hasUser:  urlFieldIsSet(value, "User"),
+		hostname: parsed.Hostname(),
+		port:     parsed.Port(),
+	}, nil
+}
+
+func urlFieldString(value any, name string) string {
+	field := urlField(value, name)
+	if !field.IsValid() || field.Kind() != reflect.String {
+		return ""
+	}
+	return field.String()
+}
+
+func urlFieldIsSet(value any, name string) bool {
+	field := urlField(value, name)
+	if !field.IsValid() {
+		return false
+	}
+
+	switch field.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return !field.IsNil()
+	default:
+		return !field.IsZero()
+	}
+}
+
+func urlField(value any, name string) reflect.Value {
+	v := reflect.ValueOf(value)
+	if !v.IsValid() {
+		return reflect.Value{}
+	}
+	if v.Kind() == reflect.Pointer {
+		if v.IsNil() {
+			return reflect.Value{}
+		}
+		v = v.Elem()
+	}
+	if v.Kind() != reflect.Struct {
+		return reflect.Value{}
+	}
+	return v.FieldByName(name)
+}
+
 func isLoopbackHost(host string) bool {
 	if host == "" {
 		return false
@@ -465,12 +607,21 @@ func isLoopbackHost(host string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-func canonicalDebugURL(debugURL *url.URL) string {
-	return core.TrimSuffix(debugURL.String(), "/")
+func canonicalDebugURL(debugURL any) string {
+	u, err := cdpURLFromAny(debugURL)
+	if err != nil {
+		return ""
+	}
+	return core.TrimSuffix(u.String(), "/")
 }
 
-func doDebugRequest(ctx context.Context, debugHTTPURL *url.URL, endpoint, rawQuery string) ([]byte, error) {
-	reqURL := *debugHTTPURL
+func doDebugRequest(ctx context.Context, debugHTTPURL any, endpoint, rawQuery string) ([]byte, error) {
+	baseURL, err := cdpURLFromAny(debugHTTPURL)
+	if err != nil {
+		return nil, err
+	}
+
+	reqURL := *baseURL
 	reqURL.Path = endpoint
 	reqURL.RawPath = ""
 	reqURL.RawQuery = rawQuery
@@ -502,7 +653,7 @@ func doDebugRequest(ctx context.Context, debugHTTPURL *url.URL, endpoint, rawQue
 	return body, nil
 }
 
-func listTargetsAt(ctx context.Context, debugHTTPURL *url.URL) ([]TargetInfo, error) {
+func listTargetsAt(ctx context.Context, debugHTTPURL any) ([]TargetInfo, error) {
 	body, err := doDebugRequest(ctx, debugHTTPURL, "/json", "")
 	if err != nil {
 		return nil, err
@@ -516,7 +667,7 @@ func listTargetsAt(ctx context.Context, debugHTTPURL *url.URL) ([]TargetInfo, er
 	return targets, nil
 }
 
-func createTargetAt(ctx context.Context, debugHTTPURL *url.URL, pageURL string) (*TargetInfo, error) {
+func createTargetAt(ctx context.Context, debugHTTPURL any, pageURL string) (*TargetInfo, error) {
 	if pageURL != "" {
 		if err := validateNavigationURL(pageURL); err != nil {
 			return nil, coreerr.E("CDPClient.createTargetAt", "invalid page URL", err)
@@ -525,7 +676,7 @@ func createTargetAt(ctx context.Context, debugHTTPURL *url.URL, pageURL string) 
 
 	rawQuery := ""
 	if pageURL != "" {
-		rawQuery = url.QueryEscape(pageURL)
+		rawQuery = core.URLEncode(pageURL)
 	}
 
 	body, err := doDebugRequest(ctx, debugHTTPURL, "/json/new", rawQuery)
@@ -541,22 +692,27 @@ func createTargetAt(ctx context.Context, debugHTTPURL *url.URL, pageURL string) 
 	return &target, nil
 }
 
-func validateTargetWebSocketURL(debugHTTPURL *url.URL, raw string) (string, error) {
-	wsURL, err := url.Parse(raw)
+func validateTargetWebSocketURL(debugHTTPURL any, raw string) (string, error) {
+	debugURL, err := cdpURLFromAny(debugHTTPURL)
+	if err != nil {
+		return "", err
+	}
+
+	wsURL, err := parseCoreURL(raw)
 	if err != nil {
 		return "", err
 	}
 	if wsURL.Scheme != "ws" && wsURL.Scheme != "wss" {
 		return "", coreerr.E("CDPClient.validateTargetWebSocketURL", "target WebSocket URL must use ws or wss", nil)
 	}
-	if !sameEndpointHost(debugHTTPURL, wsURL) {
+	if !sameEndpointHost(debugURL, wsURL) {
 		return "", coreerr.E("CDPClient.validateTargetWebSocketURL", "target WebSocket URL must match debug URL host", nil)
 	}
 	return wsURL.String(), nil
 }
 
 func validateNavigationURL(raw string) error {
-	navigationURL, err := url.Parse(raw)
+	navigationURL, err := parseCoreURL(raw)
 	if err != nil {
 		return err
 	}
@@ -566,7 +722,7 @@ func validateNavigationURL(raw string) error {
 		if navigationURL.Host == "" {
 			return coreerr.E("CDPClient.validateNavigationURL", "navigation URL host is required", nil)
 		}
-		if navigationURL.User != nil {
+		if navigationURL.hasUser {
 			return coreerr.E("CDPClient.validateNavigationURL", "navigation URL must not include credentials", nil)
 		}
 		return nil
@@ -580,11 +736,24 @@ func validateNavigationURL(raw string) error {
 	}
 }
 
-func sameEndpointHost(httpURL, wsURL *url.URL) bool {
-	return core.Lower(httpURL.Hostname()) == core.Lower(wsURL.Hostname()) && normalisedPort(httpURL) == normalisedPort(wsURL)
+func sameEndpointHost(httpURL, wsURL any) bool {
+	httpEndpoint, err := cdpURLFromAny(httpURL)
+	if err != nil {
+		return false
+	}
+	wsEndpoint, err := cdpURLFromAny(wsURL)
+	if err != nil {
+		return false
+	}
+	return core.Lower(httpEndpoint.Hostname()) == core.Lower(wsEndpoint.Hostname()) && normalisedPort(httpEndpoint) == normalisedPort(wsEndpoint)
 }
 
-func normalisedPort(u *url.URL) string {
+func normalisedPort(value any) string {
+	u, err := cdpURLFromAny(value)
+	if err != nil {
+		return ""
+	}
+
 	if port := u.Port(); port != "" {
 		return port
 	}
@@ -600,12 +769,12 @@ func normalisedPort(u *url.URL) string {
 }
 
 func targetIDFromWebSocketURL(raw string) (string, error) {
-	wsURL, err := url.Parse(raw)
+	wsURL, err := parseCoreURL(raw)
 	if err != nil {
 		return "", err
 	}
 
-	targetID := path.Base(core.TrimSuffix(wsURL.Path, "/"))
+	targetID := core.PathBase(core.TrimSuffix(wsURL.Path, "/"))
 	if targetID == "." || targetID == "/" || targetID == "" {
 		return "", coreerr.E("CDPClient.targetIDFromWebSocketURL", "missing target ID in WebSocket URL", nil)
 	}

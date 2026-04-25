@@ -106,6 +106,9 @@ func WithDebugURL(url string) Option {
 //	webview.New(webview.WithDebugURL("http://localhost:9222"), webview.WithTimeout(10*time.Second))
 func WithTimeout(d time.Duration) Option {
 	return func(wv *Webview) error {
+		if d <= 0 {
+			return coreerr.E("Webview.WithTimeout", "timeout must be positive", nil)
+		}
 		wv.timeout = d
 		return nil
 	}

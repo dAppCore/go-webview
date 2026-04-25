@@ -3,10 +3,8 @@ package webview
 
 import (
 	"context"
-	"io"
-	"net/http"
-	"net/http/httptest"
-	"strings"
+	"net/http"          // Note: AX-6 intrinsic - in-process CDP fixture server; no Core HTTP test server primitive yet.
+	"net/http/httptest" // Note: AX-6 intrinsic - bounded in-process CDP fixture lifecycle for debug endpoint tests.
 	"testing"
 	"time"
 )
@@ -30,6 +28,40 @@ func TestConsoleMessage_Good(t *testing.T) {
 	}
 	if msg.Line != 42 {
 		t.Errorf("Expected line 42, got %d", msg.Line)
+	}
+}
+
+// TestConsoleMessage_Bad_ZeroValue verifies a missing CDP payload stays distinguishable from a populated message.
+func TestConsoleMessage_Bad_ZeroValue(t *testing.T) {
+	var msg ConsoleMessage
+
+	if msg.Type != "" {
+		t.Errorf("Expected empty type, got %q", msg.Type)
+	}
+	if msg.Text != "" {
+		t.Errorf("Expected empty text, got %q", msg.Text)
+	}
+	if !msg.Timestamp.IsZero() {
+		t.Errorf("Expected zero timestamp, got %v", msg.Timestamp)
+	}
+	if msg.Line != 0 || msg.Column != 0 {
+		t.Errorf("Expected zero source coordinates, got line %d column %d", msg.Line, msg.Column)
+	}
+}
+
+// TestConsoleMessage_Ugly_ControlCharacters verifies log text is retained as data before output formatting sanitises it.
+func TestConsoleMessage_Ugly_ControlCharacters(t *testing.T) {
+	msg := ConsoleMessage{
+		Type: "error",
+		Text: "first line\nsecond line\x1b[31m",
+		Line: -1,
+	}
+
+	if msg.Text != "first line\nsecond line\x1b[31m" {
+		t.Errorf("Expected text to be retained verbatim, got %q", msg.Text)
+	}
+	if msg.Line != -1 {
+		t.Errorf("Expected malformed source line to be retained, got %d", msg.Line)
 	}
 }
 
@@ -69,6 +101,41 @@ func TestElementInfo_Good(t *testing.T) {
 	}
 }
 
+// TestElementInfo_Bad_NilAttributes verifies a malformed element payload can be inspected without a map allocation.
+func TestElementInfo_Bad_NilAttributes(t *testing.T) {
+	elem := ElementInfo{
+		NodeID:     321,
+		TagName:    "DIV",
+		Attributes: nil,
+	}
+
+	if elem.Attributes != nil {
+		t.Fatalf("Expected nil attributes, got %#v", elem.Attributes)
+	}
+	if got := elem.Attributes["missing"]; got != "" {
+		t.Fatalf("Expected missing nil-map attribute to read as empty, got %q", got)
+	}
+}
+
+// TestElementInfo_Ugly_EmptyContentWithZeroBox verifies boundary element data keeps an explicit zero-size box.
+func TestElementInfo_Ugly_EmptyContentWithZeroBox(t *testing.T) {
+	elem := ElementInfo{
+		NodeID:      0,
+		TagName:     "",
+		Attributes:  map[string]string{},
+		InnerHTML:   "",
+		InnerText:   "",
+		BoundingBox: &BoundingBox{},
+	}
+
+	if elem.BoundingBox == nil {
+		t.Fatal("Expected explicit zero bounding box")
+	}
+	if elem.BoundingBox.Width != 0 || elem.BoundingBox.Height != 0 {
+		t.Fatalf("Expected zero-size bounding box, got %#v", elem.BoundingBox)
+	}
+}
+
 // TestBoundingBox_Good verifies the BoundingBox struct has expected fields.
 func TestBoundingBox_Good(t *testing.T) {
 	box := BoundingBox{
@@ -92,6 +159,37 @@ func TestBoundingBox_Good(t *testing.T) {
 	}
 }
 
+// TestBoundingBox_Bad_NegativeDimensions verifies invalid geometry remains visible to callers.
+func TestBoundingBox_Bad_NegativeDimensions(t *testing.T) {
+	box := BoundingBox{
+		X:      -10,
+		Y:      -20,
+		Width:  -100,
+		Height: -50,
+	}
+
+	if box.Width != -100 {
+		t.Errorf("Expected negative width to be retained, got %f", box.Width)
+	}
+	if box.Height != -50 {
+		t.Errorf("Expected negative height to be retained, got %f", box.Height)
+	}
+}
+
+// TestBoundingBox_Ugly_ZeroArea verifies zero-area geometry is represented exactly.
+func TestBoundingBox_Ugly_ZeroArea(t *testing.T) {
+	box := BoundingBox{
+		X:      10,
+		Y:      20,
+		Width:  0,
+		Height: 0,
+	}
+
+	if box.Width != 0 || box.Height != 0 {
+		t.Fatalf("Expected zero-area box, got %#v", box)
+	}
+}
+
 // TestWithTimeout_Good verifies the WithTimeout option sets timeout correctly.
 func TestWithTimeout_Good(t *testing.T) {
 	// We can't fully test without a real Chrome connection,
@@ -106,6 +204,31 @@ func TestWithTimeout_Good(t *testing.T) {
 
 	if wv.timeout != 60*time.Second {
 		t.Errorf("Expected timeout 60s, got %v", wv.timeout)
+	}
+}
+
+// TestWithTimeout_Bad_NonPositiveDuration verifies invalid timeouts are rejected.
+func TestWithTimeout_Bad_NonPositiveDuration(t *testing.T) {
+	for _, timeout := range []time.Duration{0, -1 * time.Second} {
+		wv := &Webview{timeout: 30 * time.Second}
+		err := WithTimeout(timeout)(wv)
+		if err == nil {
+			t.Fatalf("Expected error for timeout %v", timeout)
+		}
+		if wv.timeout != 30*time.Second {
+			t.Fatalf("Expected existing timeout to remain unchanged, got %v", wv.timeout)
+		}
+	}
+}
+
+// TestWithTimeout_Ugly_MinimumPositiveDuration verifies the smallest positive timeout is still accepted.
+func TestWithTimeout_Ugly_MinimumPositiveDuration(t *testing.T) {
+	wv := &Webview{}
+	if err := WithTimeout(time.Nanosecond)(wv); err != nil {
+		t.Fatalf("WithTimeout returned error: %v", err)
+	}
+	if wv.timeout != time.Nanosecond {
+		t.Fatalf("Expected timeout 1ns, got %v", wv.timeout)
 	}
 }
 
@@ -620,13 +743,14 @@ func TestValidateNavigationURL_Bad_RejectsDangerousSchemes(t *testing.T) {
 
 // TestDoDebugRequest_Bad_RejectsOversizedBody verifies debug responses are bounded.
 func TestDoDebugRequest_Bad_RejectsOversizedBody(t *testing.T) {
-	var payload strings.Builder
-	payload.Grow(maxDebugResponseBytes + 1)
-	payload.WriteString(strings.Repeat("a", maxDebugResponseBytes+1))
+	payload := make([]byte, maxDebugResponseBytes+1)
+	for i := range payload {
+		payload[i] = 'a'
+	}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		_, _ = io.WriteString(w, payload.String())
+		_, _ = w.Write(payload)
 	}))
 	t.Cleanup(server.Close)
 

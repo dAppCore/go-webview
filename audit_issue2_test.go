@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"sync"
+	"sync" // Note: AX-6 — internal concurrency primitive; structural per RFC §3/§6
 	"testing"
 	"time"
 

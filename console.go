@@ -6,8 +6,8 @@ import (
 	"iter"
 	"slices"
 	"strings"
-	"sync"
-	"sync/atomic"
+	"sync"        // Note: AX-6 — internal concurrency primitive; structural per RFC §3/§6
+	"sync/atomic" // Note: AX-6 — internal concurrency primitive; structural per RFC §3/§6
 	"time"
 
 	core "dappco.re/go/core"

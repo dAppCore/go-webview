@@ -38,7 +38,7 @@ import (
 	"encoding/base64" // Note: encoding/base64 — PNG screenshot decode from Chrome DevTools Protocol; no core equivalent exists yet.
 	"iter"            // Note: intrinsic — stdlib iterator primitive for Seq[ConsoleMessage] / Seq[*ElementInfo] return types
 	"slices"          // Note: intrinsic — slices.Collect materialises console message iterator into a snapshot
-	"sync"
+	"sync"            // Note: AX-6 — internal concurrency primitive; structural per RFC §3/§6
 	"time"
 
 	core "dappco.re/go/core"

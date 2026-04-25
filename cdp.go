@@ -8,9 +8,9 @@ import (
 	"net"      // Note: AX-6 intrinsic — loopback IP parsing and terminal network error sentinels; no Core Process context is available here.
 	"net/http" // Note: AX-6 intrinsic — CDP DevTools discovery is an HTTP boundary (/json, /json/new, /json/version); no core HTTP fetch primitive yet.
 	"reflect"
-	"slices" // Note: intrinsic — slices.Clone duplicates event handler slice under RLock before dispatch
-	"sync"
-	"sync/atomic"
+	"slices"      // Note: intrinsic — slices.Clone duplicates event handler slice under RLock before dispatch
+	"sync"        // Note: AX-6 — internal concurrency primitive; structural per RFC §3/§6
+	"sync/atomic" // Note: AX-6 — internal concurrency primitive; structural per RFC §3/§6
 	"time"
 
 	core "dappco.re/go/core"

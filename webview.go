@@ -7,18 +7,29 @@
 //
 // Example usage:
 //
-//	wv, err := webview.New(webview.WithDebugURL("http://localhost:9222"))
-//	if err != nil {
-//	    log.Fatal(err)
-//	}
-//	defer wv.Close()
-//
-//	if err := wv.Navigate("https://example.com"); err != nil {
-//	    log.Fatal(err)
+//	func main() {
+//	    if err := run(); err != nil {
+//	        core.Print(os.Stderr, "webview example: %v", err)
+//	        os.Exit(1)
+//	    }
 //	}
 //
-//	if err := wv.Click("#submit-button"); err != nil {
-//	    log.Fatal(err)
+//	func run() error {
+//	    wv, err := webview.New(webview.WithDebugURL("http://localhost:9222"))
+//	    if err != nil {
+//	        return core.E("webview.example", "create webview", err)
+//	    }
+//	    defer wv.Close()
+//
+//	    if err := wv.Navigate("https://example.com"); err != nil {
+//	        return core.E("webview.example", "navigate", err)
+//	    }
+//
+//	    if err := wv.Click("#submit-button"); err != nil {
+//	        return core.E("webview.example", "click submit button", err)
+//	    }
+//
+//	    return nil
 //	}
 package webview
 

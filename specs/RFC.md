@@ -219,6 +219,7 @@ Fields:
 Declaration: `type ExceptionWatcher struct`
 
 Collector for JavaScript exceptions emitted by the bound `Webview`. All fields are unexported.
+New watchers start with an empty exception buffer and a default limit of 1000 stored exceptions. When the limit is exceeded, the oldest entries are trimmed on later writes.
 
 Methods:
 - `AddHandler(handler func(ExceptionInfo))`: Registers a callback for future exception events.
@@ -423,8 +424,8 @@ Methods:
 - `GetHTML(selector string) (string, error)`: Returns `document.documentElement.outerHTML` when `selector` is empty; otherwise returns `document.querySelector(selector)?.outerHTML || ""`.
 - `GetTitle() (string, error)`: Evaluates `document.title` and requires the result to be a string.
 - `GetURL() (string, error)`: Evaluates `window.location.href` and requires the result to be a string.
-- `GoBack() error`: Calls `Page.goBackOrForward` with `delta: -1`.
-- `GoForward() error`: Calls `Page.goBackOrForward` with `delta: 1`.
+- `GoBack() error`: Calls `Page.getNavigationHistory`, selects the previous entry, and then calls `Page.navigateToHistoryEntry`.
+- `GoForward() error`: Calls `Page.getNavigationHistory`, selects the next entry, and then calls `Page.navigateToHistoryEntry`.
 - `Navigate(url string) error`: Calls `Page.navigate` and then polls `document.readyState` every 100 ms until it becomes `"complete"` or the timeout expires.
 - `QuerySelector(selector string) (*ElementInfo, error)`: Fetches the document root, runs `DOM.querySelector`, errors when the selector does not resolve, and returns `ElementInfo` for the matched node.
 - `QuerySelectorAll(selector string) ([]*ElementInfo, error)`: Runs `DOM.querySelectorAll` and returns one `ElementInfo` per node ID whose metadata lookup succeeds. Nodes whose metadata fetch fails are skipped.
@@ -487,7 +488,7 @@ Creates a `ConsoleWatcher`, initialises an empty message buffer with a 1000-mess
 ### NewExceptionWatcher
 `func NewExceptionWatcher(wv *Webview) *ExceptionWatcher`
 
-Creates an `ExceptionWatcher`, initialises an empty exception buffer, and subscribes it to `Runtime.exceptionThrown` events on `wv.client`.
+Creates an `ExceptionWatcher`, initialises an empty exception buffer with a 1000-exception limit, and subscribes it to `Runtime.exceptionThrown` events on `wv.client`.
 
 ### WithConsoleLimit
 `func WithConsoleLimit(limit int) Option`

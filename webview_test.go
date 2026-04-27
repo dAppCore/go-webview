@@ -3,6 +3,8 @@ package webview
 
 import (
 	"context"
+	"net/http"          // Note: AX-6 intrinsic - in-process CDP fixture server; no Core HTTP test server primitive yet.
+	"net/http/httptest" // Note: AX-6 intrinsic - bounded in-process CDP fixture lifecycle for debug endpoint tests.
 	"testing"
 	"time"
 )
@@ -26,6 +28,40 @@ func TestConsoleMessage_Good(t *testing.T) {
 	}
 	if msg.Line != 42 {
 		t.Errorf("Expected line 42, got %d", msg.Line)
+	}
+}
+
+// TestConsoleMessage_Bad_ZeroValue verifies a missing CDP payload stays distinguishable from a populated message.
+func TestConsoleMessage_Bad_ZeroValue(t *testing.T) {
+	var msg ConsoleMessage
+
+	if msg.Type != "" {
+		t.Errorf("Expected empty type, got %q", msg.Type)
+	}
+	if msg.Text != "" {
+		t.Errorf("Expected empty text, got %q", msg.Text)
+	}
+	if !msg.Timestamp.IsZero() {
+		t.Errorf("Expected zero timestamp, got %v", msg.Timestamp)
+	}
+	if msg.Line != 0 || msg.Column != 0 {
+		t.Errorf("Expected zero source coordinates, got line %d column %d", msg.Line, msg.Column)
+	}
+}
+
+// TestConsoleMessage_Ugly_ControlCharacters verifies log text is retained as data before output formatting sanitises it.
+func TestConsoleMessage_Ugly_ControlCharacters(t *testing.T) {
+	msg := ConsoleMessage{
+		Type: "error",
+		Text: "first line\nsecond line\x1b[31m",
+		Line: -1,
+	}
+
+	if msg.Text != "first line\nsecond line\x1b[31m" {
+		t.Errorf("Expected text to be retained verbatim, got %q", msg.Text)
+	}
+	if msg.Line != -1 {
+		t.Errorf("Expected malformed source line to be retained, got %d", msg.Line)
 	}
 }
 
@@ -65,6 +101,41 @@ func TestElementInfo_Good(t *testing.T) {
 	}
 }
 
+// TestElementInfo_Bad_NilAttributes verifies a malformed element payload can be inspected without a map allocation.
+func TestElementInfo_Bad_NilAttributes(t *testing.T) {
+	elem := ElementInfo{
+		NodeID:     321,
+		TagName:    "DIV",
+		Attributes: nil,
+	}
+
+	if elem.Attributes != nil {
+		t.Fatalf("Expected nil attributes, got %#v", elem.Attributes)
+	}
+	if got := elem.Attributes["missing"]; got != "" {
+		t.Fatalf("Expected missing nil-map attribute to read as empty, got %q", got)
+	}
+}
+
+// TestElementInfo_Ugly_EmptyContentWithZeroBox verifies boundary element data keeps an explicit zero-size box.
+func TestElementInfo_Ugly_EmptyContentWithZeroBox(t *testing.T) {
+	elem := ElementInfo{
+		NodeID:      0,
+		TagName:     "",
+		Attributes:  map[string]string{},
+		InnerHTML:   "",
+		InnerText:   "",
+		BoundingBox: &BoundingBox{},
+	}
+
+	if elem.BoundingBox == nil {
+		t.Fatal("Expected explicit zero bounding box")
+	}
+	if elem.BoundingBox.Width != 0 || elem.BoundingBox.Height != 0 {
+		t.Fatalf("Expected zero-size bounding box, got %#v", elem.BoundingBox)
+	}
+}
+
 // TestBoundingBox_Good verifies the BoundingBox struct has expected fields.
 func TestBoundingBox_Good(t *testing.T) {
 	box := BoundingBox{
@@ -88,6 +159,37 @@ func TestBoundingBox_Good(t *testing.T) {
 	}
 }
 
+// TestBoundingBox_Bad_NegativeDimensions verifies invalid geometry remains visible to callers.
+func TestBoundingBox_Bad_NegativeDimensions(t *testing.T) {
+	box := BoundingBox{
+		X:      -10,
+		Y:      -20,
+		Width:  -100,
+		Height: -50,
+	}
+
+	if box.Width != -100 {
+		t.Errorf("Expected negative width to be retained, got %f", box.Width)
+	}
+	if box.Height != -50 {
+		t.Errorf("Expected negative height to be retained, got %f", box.Height)
+	}
+}
+
+// TestBoundingBox_Ugly_ZeroArea verifies zero-area geometry is represented exactly.
+func TestBoundingBox_Ugly_ZeroArea(t *testing.T) {
+	box := BoundingBox{
+		X:      10,
+		Y:      20,
+		Width:  0,
+		Height: 0,
+	}
+
+	if box.Width != 0 || box.Height != 0 {
+		t.Fatalf("Expected zero-area box, got %#v", box)
+	}
+}
+
 // TestWithTimeout_Good verifies the WithTimeout option sets timeout correctly.
 func TestWithTimeout_Good(t *testing.T) {
 	// We can't fully test without a real Chrome connection,
@@ -105,6 +207,31 @@ func TestWithTimeout_Good(t *testing.T) {
 	}
 }
 
+// TestWithTimeout_Bad_NonPositiveDuration verifies invalid timeouts are rejected.
+func TestWithTimeout_Bad_NonPositiveDuration(t *testing.T) {
+	for _, timeout := range []time.Duration{0, -1 * time.Second} {
+		wv := &Webview{timeout: 30 * time.Second}
+		err := WithTimeout(timeout)(wv)
+		if err == nil {
+			t.Fatalf("Expected error for timeout %v", timeout)
+		}
+		if wv.timeout != 30*time.Second {
+			t.Fatalf("Expected existing timeout to remain unchanged, got %v", wv.timeout)
+		}
+	}
+}
+
+// TestWithTimeout_Ugly_MinimumPositiveDuration verifies the smallest positive timeout is still accepted.
+func TestWithTimeout_Ugly_MinimumPositiveDuration(t *testing.T) {
+	wv := &Webview{}
+	if err := WithTimeout(time.Nanosecond)(wv); err != nil {
+		t.Fatalf("WithTimeout returned error: %v", err)
+	}
+	if wv.timeout != time.Nanosecond {
+		t.Fatalf("Expected timeout 1ns, got %v", wv.timeout)
+	}
+}
+
 // TestWithConsoleLimit_Good verifies the WithConsoleLimit option sets limit correctly.
 func TestWithConsoleLimit_Good(t *testing.T) {
 	wv := &Webview{}
@@ -117,6 +244,20 @@ func TestWithConsoleLimit_Good(t *testing.T) {
 
 	if wv.consoleLimit != 500 {
 		t.Errorf("Expected consoleLimit 500, got %d", wv.consoleLimit)
+	}
+}
+
+// TestWithConsoleLimit_Bad_NegativeBecomesZero verifies negative limits are clamped to zero.
+func TestWithConsoleLimit_Bad_NegativeBecomesZero(t *testing.T) {
+	wv := &Webview{consoleLimit: 10}
+	opt := WithConsoleLimit(-1)
+
+	if err := opt(wv); err != nil {
+		t.Fatalf("WithConsoleLimit returned error: %v", err)
+	}
+
+	if wv.consoleLimit != 0 {
+		t.Fatalf("Expected consoleLimit 0, got %d", wv.consoleLimit)
 	}
 }
 
@@ -136,6 +277,13 @@ func TestNew_Bad_InvalidDebugURL(t *testing.T) {
 	}
 }
 
+func TestWebview_Close_Good_NoClient(t *testing.T) {
+	wv := &Webview{cancel: func() {}}
+	if err := wv.Close(); err != nil {
+		t.Fatalf("Close returned error for nil client: %v", err)
+	}
+}
+
 // TestActionSequence_Good verifies action sequence building works.
 func TestActionSequence_Good(t *testing.T) {
 	seq := NewActionSequence().
@@ -147,6 +295,52 @@ func TestActionSequence_Good(t *testing.T) {
 
 	if len(seq.actions) != 5 {
 		t.Errorf("Expected 5 actions, got %d", len(seq.actions))
+	}
+}
+
+// TestActionSequence_Good_AllBuilders verifies every fluent builder appends the expected action.
+func TestActionSequence_Good_AllBuilders(t *testing.T) {
+	seq := NewActionSequence().
+		Scroll(0, 500).
+		ScrollIntoView("#target").
+		Focus("#input").
+		Blur("#input").
+		Clear("#input").
+		Select("#dropdown", "option1").
+		Check("#checkbox", true).
+		Hover("#menu-item").
+		DoubleClick("#editable").
+		RightClick("#context-menu-trigger").
+		PressKey("Enter").
+		SetAttribute("#element", "data-value", "test").
+		RemoveAttribute("#element", "disabled").
+		SetValue("#input", "new value")
+
+	if len(seq.actions) != 14 {
+		t.Fatalf("Expected 14 actions, got %d", len(seq.actions))
+	}
+
+	wantTypes := []any{
+		ScrollAction{X: 0, Y: 500},
+		ScrollIntoViewAction{Selector: "#target"},
+		FocusAction{Selector: "#input"},
+		BlurAction{Selector: "#input"},
+		ClearAction{Selector: "#input"},
+		SelectAction{Selector: "#dropdown", Value: "option1"},
+		CheckAction{Selector: "#checkbox", Checked: true},
+		HoverAction{Selector: "#menu-item"},
+		DoubleClickAction{Selector: "#editable"},
+		RightClickAction{Selector: "#context-menu-trigger"},
+		PressKeyAction{Key: "Enter"},
+		SetAttributeAction{Selector: "#element", Attribute: "data-value", Value: "test"},
+		RemoveAttributeAction{Selector: "#element", Attribute: "disabled"},
+		SetValueAction{Selector: "#input", Value: "new value"},
+	}
+
+	for i, want := range wantTypes {
+		if got := seq.actions[i]; got != want {
+			t.Fatalf("action %d = %#v, want %#v", i, got, want)
+		}
 	}
 }
 
@@ -371,6 +565,59 @@ func TestFormatConsoleOutput_Good_Empty(t *testing.T) {
 	}
 }
 
+// TestFormatConsoleOutput_Good_SanitisesControlCharacters verifies console output is safe for log sinks.
+func TestFormatConsoleOutput_Good_SanitisesControlCharacters(t *testing.T) {
+	output := FormatConsoleOutput([]ConsoleMessage{
+		{
+			Type:      "error",
+			Text:      "first line\nsecond line\x1b[31m",
+			Timestamp: time.Date(2026, 1, 15, 14, 30, 45, 0, time.UTC),
+		},
+	})
+
+	if !containsString(output, `first line\nsecond line\x1b[31m`) {
+		t.Fatalf("expected control characters to be escaped, got %q", output)
+	}
+	if containsString(output, "\nsecond line") {
+		t.Fatalf("expected embedded newlines to be escaped, got %q", output)
+	}
+}
+
+// TestNormalizeConsoleType_Good verifies CDP warning aliases are normalised.
+func TestNormalizeConsoleType_Good(t *testing.T) {
+	if got := normalizeConsoleType("warn"); got != "warn" {
+		t.Fatalf("normalizeConsoleType(\"warn\") = %q, want %q", got, "warn")
+	}
+	if got := normalizeConsoleType("WARNING"); got != "warn" {
+		t.Fatalf("normalizeConsoleType(\"WARNING\") = %q, want %q", got, "warn")
+	}
+}
+
+// TestWebviewHandleConsoleEvent_Good_NormalizesWarningType verifies CDP warning aliases are stored as warn.
+func TestWebviewHandleConsoleEvent_Good_NormalizesWarningType(t *testing.T) {
+	wv := &Webview{
+		consoleLogs:  make([]ConsoleMessage, 0),
+		consoleLimit: 10,
+	}
+
+	wv.handleConsoleEvent(map[string]any{
+		"type": "warn",
+		"args": []any{
+			map[string]any{"value": "deprecated"},
+		},
+	})
+
+	if len(wv.consoleLogs) != 1 {
+		t.Fatalf("Expected one console message, got %d", len(wv.consoleLogs))
+	}
+	if wv.consoleLogs[0].Type != "warn" {
+		t.Fatalf("Expected warn type, got %q", wv.consoleLogs[0].Type)
+	}
+	if wv.consoleLogs[0].Text != "deprecated" {
+		t.Fatalf("Expected text %q, got %q", "deprecated", wv.consoleLogs[0].Text)
+	}
+}
+
 // TestContainsString_Good verifies substring matching.
 func TestContainsString_Good(t *testing.T) {
 	tests := []struct {
@@ -437,6 +684,83 @@ func TestFormatJSValue_Good(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("formatJSValue(%v) = %q, want %q", tc.input, got, tc.want)
 		}
+	}
+}
+
+// TestParseDebugURL_Bad_RejectsRemoteHosts verifies debug endpoints are loopback-only.
+func TestParseDebugURL_Bad_RejectsRemoteHosts(t *testing.T) {
+	for _, raw := range []string{
+		"http://example.com:9222",
+		"http://10.0.0.1:9222",
+		"http://[2001:db8::1]:9222",
+	} {
+		if _, err := parseDebugURL(raw); err == nil {
+			t.Fatalf("parseDebugURL(%q) returned nil error", raw)
+		}
+	}
+}
+
+// TestParseDebugURL_Good_AllowsLoopbackHosts verifies local debugging endpoints remain usable.
+func TestParseDebugURL_Good_AllowsLoopbackHosts(t *testing.T) {
+	for _, raw := range []string{
+		"http://localhost:9222",
+		"http://127.0.0.1:9222",
+		"http://[::1]:9222",
+	} {
+		if _, err := parseDebugURL(raw); err != nil {
+			t.Fatalf("parseDebugURL(%q) returned error: %v", raw, err)
+		}
+	}
+}
+
+// TestValidateNavigationURL_Good_AllowsWebURLs verifies navigation accepts HTTP(S) pages.
+func TestValidateNavigationURL_Good_AllowsWebURLs(t *testing.T) {
+	for _, raw := range []string{
+		"https://example.com",
+		"http://localhost:8080/path?q=1",
+		"about:blank",
+	} {
+		if err := validateNavigationURL(raw); err != nil {
+			t.Fatalf("validateNavigationURL(%q) returned error: %v", raw, err)
+		}
+	}
+}
+
+// TestValidateNavigationURL_Bad_RejectsDangerousSchemes verifies non-web schemes are blocked.
+func TestValidateNavigationURL_Bad_RejectsDangerousSchemes(t *testing.T) {
+	for _, raw := range []string{
+		"javascript:alert(1)",
+		"data:text/html,hello",
+		"file:///etc/passwd",
+		"about:srcdoc",
+		"ftp://example.com",
+	} {
+		if err := validateNavigationURL(raw); err == nil {
+			t.Fatalf("validateNavigationURL(%q) returned nil error", raw)
+		}
+	}
+}
+
+// TestDoDebugRequest_Bad_RejectsOversizedBody verifies debug responses are bounded.
+func TestDoDebugRequest_Bad_RejectsOversizedBody(t *testing.T) {
+	payload := make([]byte, maxDebugResponseBytes+1)
+	for i := range payload {
+		payload[i] = 'a'
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(payload)
+	}))
+	t.Cleanup(server.Close)
+
+	debugURL, err := parseDebugURL(server.URL)
+	if err != nil {
+		t.Fatalf("parseDebugURL returned error: %v", err)
+	}
+
+	if _, err := doDebugRequest(context.Background(), debugURL, "/json", ""); err == nil {
+		t.Fatal("doDebugRequest returned nil error for oversized body")
 	}
 }
 
@@ -528,6 +852,20 @@ func TestAddConsoleMessage_Good(t *testing.T) {
 	}
 }
 
+// TestAddConsoleMessage_Good_ZeroLimitDropsMessages verifies zero retention disables storage.
+func TestAddConsoleMessage_Good_ZeroLimitDropsMessages(t *testing.T) {
+	wv := &Webview{
+		consoleLogs:  make([]ConsoleMessage, 0, 1),
+		consoleLimit: 0,
+	}
+
+	wv.addConsoleMessage(ConsoleMessage{Type: "log", Text: "ignored"})
+
+	if len(wv.consoleLogs) != 0 {
+		t.Fatalf("Expected zero retained messages, got %d", len(wv.consoleLogs))
+	}
+}
+
 // TestConsoleWatcherFilter_Good verifies console watcher filter matching.
 func TestConsoleWatcherFilter_Good(t *testing.T) {
 	// Create a minimal ConsoleWatcher without a real Webview
@@ -565,6 +903,20 @@ func TestConsoleWatcherFilter_Good(t *testing.T) {
 	if cw.matchesFilter(msg) {
 		t.Error("Expected 'test error' NOT to match pattern 'hello'")
 	}
+
+	cw.ClearFilters()
+	cw.AddFilter(ConsoleFilter{Type: "warning"})
+	if !cw.matchesFilter(ConsoleMessage{Type: "warning", Text: "deprecated"}) {
+		t.Error("Expected warning message to match warning filter")
+	}
+	if !cw.matchesFilter(ConsoleMessage{Type: "warn", Text: "deprecated"}) {
+		t.Error("Expected warn message to match warning filter")
+	}
+	cw.ClearFilters()
+	cw.AddFilter(ConsoleFilter{Type: "warn"})
+	if !cw.matchesFilter(ConsoleMessage{Type: "warning", Text: "deprecated"}) {
+		t.Error("Expected warning message to match warn filter")
+	}
 }
 
 // TestConsoleWatcherCounts_Good verifies console watcher counting methods.
@@ -575,7 +927,7 @@ func TestConsoleWatcherCounts_Good(t *testing.T) {
 			{Type: "error", Text: "err 1"},
 			{Type: "log", Text: "info 2"},
 			{Type: "error", Text: "err 2"},
-			{Type: "warning", Text: "warn 1"},
+			{Type: "warn", Text: "warn 1"},
 		},
 		filters:  make([]ConsoleFilter, 0),
 		limit:    1000,
@@ -761,6 +1113,65 @@ func TestConsoleWatcherFilteredMessages_Good(t *testing.T) {
 	}
 	if filtered[0].Type != "error" {
 		t.Errorf("Expected error type, got %q", filtered[0].Type)
+	}
+}
+
+// TestConsoleWatcherFilteredMessages_Good_UsesAnyActiveFilter verifies filters compose as a union.
+func TestConsoleWatcherFilteredMessages_Good_UsesAnyActiveFilter(t *testing.T) {
+	cw := &ConsoleWatcher{
+		messages: []ConsoleMessage{
+			{Type: "error", Text: "boom happened"},
+			{Type: "error", Text: "different message"},
+			{Type: "log", Text: "boom happened"},
+		},
+		filters: []ConsoleFilter{
+			{Type: "error"},
+			{Pattern: "boom"},
+		},
+		limit:    1000,
+		handlers: make([]consoleHandlerRegistration, 0),
+	}
+
+	filtered := cw.FilteredMessages()
+	if len(filtered) != 3 {
+		t.Fatalf("Expected 3 filtered messages, got %d", len(filtered))
+	}
+	if filtered[0].Text != "boom happened" {
+		t.Fatalf("Expected the first matching message, got %q", filtered[0].Text)
+	}
+	if filtered[1].Text != "different message" {
+		t.Fatalf("Expected the second stored message to remain visible, got %q", filtered[1].Text)
+	}
+	if filtered[2].Text != "boom happened" {
+		t.Fatalf("Expected the log message matching the pattern filter, got %q", filtered[2].Text)
+	}
+}
+
+// TestConsoleWatcherSetLimit_Good_AppliesToFutureWrites verifies shrinking the limit trims buffered messages on the next append.
+func TestConsoleWatcherSetLimit_Good_AppliesToFutureWrites(t *testing.T) {
+	cw := &ConsoleWatcher{
+		messages: []ConsoleMessage{
+			{Type: "log", Text: "first"},
+			{Type: "log", Text: "second"},
+			{Type: "log", Text: "third"},
+		},
+		limit:    1000,
+		handlers: make([]consoleHandlerRegistration, 0),
+	}
+
+	cw.SetLimit(2)
+
+	if cw.Count() != 3 {
+		t.Fatalf("Expected 3 messages to remain until the next append, got %d", cw.Count())
+	}
+
+	cw.addMessage(ConsoleMessage{Type: "log", Text: "fourth"})
+
+	if cw.Count() != 2 {
+		t.Fatalf("Expected 2 messages after the next append, got %d", cw.Count())
+	}
+	if messages := cw.Messages(); messages[0].Text != "third" || messages[1].Text != "fourth" {
+		t.Fatalf("Unexpected retained messages after trimming: %#v", messages)
 	}
 }
 

@@ -6,7 +6,7 @@ import (
 	"time"
 
 	core "dappco.re/go/core"
-	coreerr "dappco.re/go/core/log"
+	coreerr "dappco.re/go/log"
 )
 
 // Action represents a browser action that can be performed.
@@ -42,13 +42,7 @@ type NavigateAction struct {
 
 // Execute performs the navigate action.
 func (a NavigateAction) Execute(ctx context.Context, wv *Webview) error {
-	_, err := wv.client.Call(ctx, "Page.navigate", map[string]any{
-		"url": a.URL,
-	})
-	if err != nil {
-		return coreerr.E("NavigateAction.Execute", "failed to navigate", err)
-	}
-	return wv.waitForLoad(ctx)
+	return wv.navigate(ctx, a.URL, "NavigateAction.Execute")
 }
 
 // WaitAction represents a wait action.
@@ -58,10 +52,13 @@ type WaitAction struct {
 
 // Execute performs the wait action.
 func (a WaitAction) Execute(ctx context.Context, wv *Webview) error {
+	timer := time.NewTimer(a.Duration)
+	defer timer.Stop()
+
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case <-time.After(a.Duration):
+	case <-timer.C:
 		return nil
 	}
 }
@@ -415,12 +412,45 @@ func (a SetValueAction) Execute(ctx context.Context, wv *Webview) error {
 	return err
 }
 
+// UploadFileAction uploads files into a file input resolved by selector.
+type UploadFileAction struct {
+	Selector  string
+	FilePaths []string
+}
+
+// Execute uploads files into the matching file input.
+func (a UploadFileAction) Execute(ctx context.Context, wv *Webview) error {
+	if wv == nil {
+		return coreerr.E("UploadFileAction.Execute", "webview is required", nil)
+	}
+	return wv.uploadFile(ctx, a.Selector, a.FilePaths)
+}
+
+// DragAndDropAction drags one element onto another.
+type DragAndDropAction struct {
+	SourceSelector string
+	TargetSelector string
+}
+
+// Execute drags the source element onto the target element.
+func (a DragAndDropAction) Execute(ctx context.Context, wv *Webview) error {
+	if wv == nil {
+		return coreerr.E("DragAndDropAction.Execute", "webview is required", nil)
+	}
+	return wv.dragAndDrop(ctx, a.SourceSelector, a.TargetSelector)
+}
+
 // ActionSequence represents a sequence of actions to execute.
 type ActionSequence struct {
 	actions []Action
 }
 
-// NewActionSequence creates a new action sequence.
+// Build a reusable action pipeline before executing it against a Webview.
+//
+//	sequence := webview.NewActionSequence().
+//		Navigate("https://example.com").
+//		WaitForSelector("form").
+//		Click("button")
 func NewActionSequence() *ActionSequence {
 	return &ActionSequence{
 		actions: make([]Action, 0),
@@ -458,11 +488,97 @@ func (s *ActionSequence) WaitForSelector(selector string) *ActionSequence {
 	return s.Add(WaitForSelectorAction{Selector: selector})
 }
 
+// Scroll adds a scroll action.
+func (s *ActionSequence) Scroll(x, y int) *ActionSequence {
+	return s.Add(ScrollAction{X: x, Y: y})
+}
+
+// ScrollIntoView adds a scroll-into-view action.
+func (s *ActionSequence) ScrollIntoView(selector string) *ActionSequence {
+	return s.Add(ScrollIntoViewAction{Selector: selector})
+}
+
+// Focus adds a focus action.
+func (s *ActionSequence) Focus(selector string) *ActionSequence {
+	return s.Add(FocusAction{Selector: selector})
+}
+
+// Blur adds a blur action.
+func (s *ActionSequence) Blur(selector string) *ActionSequence {
+	return s.Add(BlurAction{Selector: selector})
+}
+
+// Clear adds a clear action.
+func (s *ActionSequence) Clear(selector string) *ActionSequence {
+	return s.Add(ClearAction{Selector: selector})
+}
+
+// Select adds a select action.
+func (s *ActionSequence) Select(selector, value string) *ActionSequence {
+	return s.Add(SelectAction{Selector: selector, Value: value})
+}
+
+// Check adds a check action.
+func (s *ActionSequence) Check(selector string, checked bool) *ActionSequence {
+	return s.Add(CheckAction{Selector: selector, Checked: checked})
+}
+
+// Hover adds a hover action.
+func (s *ActionSequence) Hover(selector string) *ActionSequence {
+	return s.Add(HoverAction{Selector: selector})
+}
+
+// DoubleClick adds a double-click action.
+func (s *ActionSequence) DoubleClick(selector string) *ActionSequence {
+	return s.Add(DoubleClickAction{Selector: selector})
+}
+
+// RightClick adds a right-click action.
+func (s *ActionSequence) RightClick(selector string) *ActionSequence {
+	return s.Add(RightClickAction{Selector: selector})
+}
+
+// PressKey adds a key press action.
+func (s *ActionSequence) PressKey(key string) *ActionSequence {
+	return s.Add(PressKeyAction{Key: key})
+}
+
+// SetAttribute adds a set-attribute action.
+func (s *ActionSequence) SetAttribute(selector, attribute, value string) *ActionSequence {
+	return s.Add(SetAttributeAction{Selector: selector, Attribute: attribute, Value: value})
+}
+
+// RemoveAttribute adds a remove-attribute action.
+func (s *ActionSequence) RemoveAttribute(selector, attribute string) *ActionSequence {
+	return s.Add(RemoveAttributeAction{Selector: selector, Attribute: attribute})
+}
+
+// SetValue adds a set-value action.
+func (s *ActionSequence) SetValue(selector, value string) *ActionSequence {
+	return s.Add(SetValueAction{Selector: selector, Value: value})
+}
+
+// UploadFile adds a file-upload action.
+func (s *ActionSequence) UploadFile(selector string, filePaths []string) *ActionSequence {
+	return s.Add(UploadFileAction{
+		Selector:  selector,
+		FilePaths: append([]string(nil), filePaths...),
+	})
+}
+
+// DragAndDrop adds a drag-and-drop action.
+func (s *ActionSequence) DragAndDrop(sourceSelector, targetSelector string) *ActionSequence {
+	return s.Add(DragAndDropAction{
+		SourceSelector: sourceSelector,
+		TargetSelector: targetSelector,
+	})
+}
+
 // Execute executes all actions in the sequence.
 func (s *ActionSequence) Execute(ctx context.Context, wv *Webview) error {
 	for i, action := range s.actions {
 		if err := action.Execute(ctx, wv); err != nil {
-			return coreerr.E("ActionSequence.Execute", core.Sprintf("action %d failed", i), err)
+			return coreerr.E("ActionSequence.Execute", core.Sprintf("action index %d failed", i), err)
 		}
 	}
 	return nil
@@ -473,10 +589,14 @@ func (wv *Webview) UploadFile(selector string, filePaths []string) error {
 	ctx, cancel := context.WithTimeout(wv.ctx, wv.timeout)
 	defer cancel()
 
+	return wv.uploadFile(ctx, selector, filePaths)
+}
+
+func (wv *Webview) uploadFile(ctx context.Context, selector string, filePaths []string) error {
 	// Get the element's node ID
 	elem, err := wv.querySelector(ctx, selector)
 	if err != nil {
-		return err
+		return coreerr.E("Webview.UploadFile", "failed to find file input", err)
 	}
 
 	// Use DOM.setFileInputFiles to set the files
@@ -484,7 +604,10 @@ func (wv *Webview) UploadFile(selector string, filePaths []string) error {
 		"nodeId": elem.NodeID,
 		"files":  filePaths,
 	})
-	return err
+	if err != nil {
+		return coreerr.E("Webview.UploadFile", "failed to upload file", err)
+	}
+	return nil
 }
 
 // DragAndDrop performs a drag and drop operation.
@@ -492,6 +615,10 @@ func (wv *Webview) DragAndDrop(sourceSelector, targetSelector string) error {
 	ctx, cancel := context.WithTimeout(wv.ctx, wv.timeout)
 	defer cancel()
 
+	return wv.dragAndDrop(ctx, sourceSelector, targetSelector)
+}
+
+func (wv *Webview) dragAndDrop(ctx context.Context, sourceSelector, targetSelector string) error {
 	// Get source and target elements
 	source, err := wv.querySelector(ctx, sourceSelector)
 	if err != nil {
@@ -524,7 +651,7 @@ func (wv *Webview) DragAndDrop(sourceSelector, targetSelector string) error {
 		"clickCount": 1,
 	})
 	if err != nil {
-		return err
+		return coreerr.E("Webview.DragAndDrop", "failed to press source element", err)
 	}
 
 	// Move to target
@@ -535,7 +662,7 @@ func (wv *Webview) DragAndDrop(sourceSelector, targetSelector string) error {
 		"button": "left",
 	})
 	if err != nil {
-		return err
+		return coreerr.E("Webview.DragAndDrop", "failed to move to target element", err)
 	}
 
 	// Mouse up on target
@@ -546,5 +673,8 @@ func (wv *Webview) DragAndDrop(sourceSelector, targetSelector string) error {
 		"button":     "left",
 		"clickCount": 1,
 	})
-	return err
+	if err != nil {
+		return coreerr.E("Webview.DragAndDrop", "failed to release target element", err)
+	}
+	return nil
 }

@@ -7,31 +7,42 @@
 //
 // Example usage:
 //
-//	wv, err := webview.New(webview.WithDebugURL("http://localhost:9222"))
-//	if err != nil {
-//	    log.Fatal(err)
-//	}
-//	defer wv.Close()
-//
-//	if err := wv.Navigate("https://example.com"); err != nil {
-//	    log.Fatal(err)
+//	func main() {
+//	    if err := run(); err != nil {
+//	        core.Print(os.Stderr, "webview example: %v", err)
+//	        os.Exit(1)
+//	    }
 //	}
 //
-//	if err := wv.Click("#submit-button"); err != nil {
-//	    log.Fatal(err)
+//	func run() error {
+//	    wv, err := webview.New(webview.WithDebugURL("http://localhost:9222"))
+//	    if err != nil {
+//	        return core.E("webview.example", "create webview", err)
+//	    }
+//	    defer wv.Close()
+//
+//	    if err := wv.Navigate("https://example.com"); err != nil {
+//	        return core.E("webview.example", "navigate", err)
+//	    }
+//
+//	    if err := wv.Click("#submit-button"); err != nil {
+//	        return core.E("webview.example", "click submit button", err)
+//	    }
+//
+//	    return nil
 //	}
 package webview
 
 import (
 	"context"
-	"encoding/base64"
-	"iter"
-	"slices"
-	"sync"
+	"encoding/base64" // Note: encoding/base64 — PNG screenshot decode from Chrome DevTools Protocol; no core equivalent exists yet.
+	"iter"            // Note: intrinsic — stdlib iterator primitive for Seq[ConsoleMessage] / Seq[*ElementInfo] return types
+	"slices"          // Note: intrinsic — slices.Collect materialises console message iterator into a snapshot
+	"sync"            // Note: AX-6 — internal concurrency primitive; structural per RFC §3/§6
 	"time"
 
 	core "dappco.re/go/core"
-	coreerr "dappco.re/go/core/log"
+	coreerr "dappco.re/go/log"
 )
 
 // Webview represents a connection to a Chrome DevTools Protocol endpoint.
@@ -76,8 +87,9 @@ type BoundingBox struct {
 // Option configures a Webview instance.
 type Option func(*Webview) error
 
-// WithDebugURL sets the Chrome DevTools debugging URL.
-// Example: http://localhost:9222
+// Connect to Chrome running with --remote-debugging-port=9222.
+//
+//	webview.New(webview.WithDebugURL("http://localhost:9222"))
 func WithDebugURL(url string) Option {
 	return func(wv *Webview) error {
 		client, err := NewCDPClient(url)
@@ -89,24 +101,35 @@ func WithDebugURL(url string) Option {
 	}
 }
 
-// WithTimeout sets the default timeout for operations.
+// Give every Webview operation a 10 second default deadline.
+//
+//	webview.New(webview.WithDebugURL("http://localhost:9222"), webview.WithTimeout(10*time.Second))
 func WithTimeout(d time.Duration) Option {
 	return func(wv *Webview) error {
+		if d <= 0 {
+			return coreerr.E("Webview.WithTimeout", "timeout must be positive", nil)
+		}
 		wv.timeout = d
 		return nil
 	}
 }
 
-// WithConsoleLimit sets the maximum number of console messages to retain.
-// Default is 1000.
+// Retain only the most recent 200 console messages on the Webview.
+//
+//	webview.New(webview.WithDebugURL("http://localhost:9222"), webview.WithConsoleLimit(200))
 func WithConsoleLimit(limit int) Option {
 	return func(wv *Webview) error {
+		if limit < 0 {
+			limit = 0
+		}
 		wv.consoleLimit = limit
 		return nil
 	}
 }
 
-// New creates a new Webview instance with the given options.
+// Create a Webview bound to an existing Chrome DevTools endpoint.
+//
+//	wv, err := webview.New(webview.WithDebugURL("http://localhost:9222"))
 func New(opts ...Option) (*Webview, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -155,23 +178,35 @@ func (wv *Webview) Close() error {
 	return nil
 }
 
-// Navigate navigates to the specified URL.
+// Load a page and wait for document.readyState === "complete".
+//
+//	wv.Navigate("https://example.com")
 func (wv *Webview) Navigate(url string) error {
 	ctx, cancel := context.WithTimeout(wv.ctx, wv.timeout)
 	defer cancel()
 
+	return wv.navigate(ctx, url, "Webview.Navigate")
+}
+
+func (wv *Webview) navigate(ctx context.Context, rawURL, scope string) error {
+	if err := validateNavigationURL(rawURL); err != nil {
+		return coreerr.E(scope, "invalid navigation URL", err)
+	}
+
 	_, err := wv.client.Call(ctx, "Page.navigate", map[string]any{
-		"url": url,
+		"url": rawURL,
 	})
 	if err != nil {
-		return coreerr.E("Webview.Navigate", "failed to navigate", err)
+		return coreerr.E(scope, "failed to navigate", err)
 	}
 
 	// Wait for page load
 	return wv.waitForLoad(ctx)
 }
 
-// Click clicks on an element matching the selector.
+// Click a button or link resolved by CSS selector.
+//
+//	wv.Click("button[type=submit]")
 func (wv *Webview) Click(selector string) error {
 	ctx, cancel := context.WithTimeout(wv.ctx, wv.timeout)
 	defer cancel()
@@ -179,7 +214,9 @@ func (wv *Webview) Click(selector string) error {
 	return wv.click(ctx, selector)
 }
 
-// Type types text into an element matching the selector.
+// Focus an input and type text through CDP key events.
+//
+//	wv.Type("input[name=email]", "agent@example.com")
 func (wv *Webview) Type(selector, text string) error {
 	ctx, cancel := context.WithTimeout(wv.ctx, wv.timeout)
 	defer cancel()
@@ -187,7 +224,9 @@ func (wv *Webview) Type(selector, text string) error {
 	return wv.typeText(ctx, selector, text)
 }
 
-// QuerySelector finds an element by CSS selector and returns its information.
+// Inspect the first matching element, including attributes and box metrics.
+//
+//	elem, err := wv.QuerySelector("#main")
 func (wv *Webview) QuerySelector(selector string) (*ElementInfo, error) {
 	ctx, cancel := context.WithTimeout(wv.ctx, wv.timeout)
 	defer cancel()
@@ -195,7 +234,9 @@ func (wv *Webview) QuerySelector(selector string) (*ElementInfo, error) {
 	return wv.querySelector(ctx, selector)
 }
 
-// QuerySelectorAll finds all elements matching the selector.
+// Inspect every element that matches the CSS selector.
+//
+//	items, err := wv.QuerySelectorAll("table tbody tr")
 func (wv *Webview) QuerySelectorAll(selector string) ([]*ElementInfo, error) {
 	ctx, cancel := context.WithTimeout(wv.ctx, wv.timeout)
 	defer cancel()
@@ -248,7 +289,9 @@ func (wv *Webview) ClearConsole() {
 	wv.consoleLogs = wv.consoleLogs[:0]
 }
 
-// Screenshot captures a screenshot and returns it as PNG bytes.
+// Capture the current page as PNG bytes.
+//
+//	png, err := wv.Screenshot()
 func (wv *Webview) Screenshot() ([]byte, error) {
 	ctx, cancel := context.WithTimeout(wv.ctx, wv.timeout)
 	defer cancel()
@@ -273,7 +316,10 @@ func (wv *Webview) Screenshot() ([]byte, error) {
 	return data, nil
 }
 
-// Evaluate executes JavaScript and returns the result.
+// Run JavaScript in the page and return the serialised value.
+//
+//	title, err := wv.Evaluate("document.title")
+//
 // Note: This intentionally executes arbitrary JavaScript in the browser context
 // for browser automation purposes. The script runs in the sandboxed browser environment.
 func (wv *Webview) Evaluate(script string) (any, error) {
@@ -283,7 +329,9 @@ func (wv *Webview) Evaluate(script string) (any, error) {
 	return wv.evaluate(ctx, script)
 }
 
-// WaitForSelector waits for an element matching the selector to appear.
+// Block until an element matching the selector exists in the DOM.
+//
+//	wv.WaitForSelector("[data-ready=true]")
 func (wv *Webview) WaitForSelector(selector string) error {
 	ctx, cancel := context.WithTimeout(wv.ctx, wv.timeout)
 	defer cancel()
@@ -352,7 +400,9 @@ func (wv *Webview) GetHTML(selector string) (string, error) {
 	return html, nil
 }
 
-// SetViewport sets the viewport size.
+// Emulate a 1440x900 desktop viewport for later interactions.
+//
+//	wv.SetViewport(1440, 900)
 func (wv *Webview) SetViewport(width, height int) error {
 	ctx, cancel := context.WithTimeout(wv.ctx, wv.timeout)
 	defer cancel()
@@ -363,10 +413,16 @@ func (wv *Webview) SetViewport(width, height int) error {
 		"deviceScaleFactor": 1,
 		"mobile":            false,
 	})
+	if err != nil {
+		return coreerr.E("Webview.SetViewport", "failed to set viewport", err)
+	}
+
 	return err
 }
 
-// SetUserAgent sets the user agent string.
+// Override the browser user agent for later requests.
+//
+//	wv.SetUserAgent("Mozilla/5.0 AgentHarness/1.0")
 func (wv *Webview) SetUserAgent(userAgent string) error {
 	ctx, cancel := context.WithTimeout(wv.ctx, wv.timeout)
 	defer cancel()
@@ -374,6 +430,10 @@ func (wv *Webview) SetUserAgent(userAgent string) error {
 	_, err := wv.client.Call(ctx, "Emulation.setUserAgentOverride", map[string]any{
 		"userAgent": userAgent,
 	})
+	if err != nil {
+		return coreerr.E("Webview.SetUserAgent", "failed to set user agent", err)
+	}
+
 	return err
 }
 
@@ -392,24 +452,56 @@ func (wv *Webview) Reload() error {
 
 // GoBack navigates back in history.
 func (wv *Webview) GoBack() error {
-	ctx, cancel := context.WithTimeout(wv.ctx, wv.timeout)
-	defer cancel()
-
-	_, err := wv.client.Call(ctx, "Page.goBackOrForward", map[string]any{
-		"delta": -1,
-	})
-	return err
+	return wv.navigateHistory(-1, "Webview.GoBack")
 }
 
 // GoForward navigates forward in history.
 func (wv *Webview) GoForward() error {
+	return wv.navigateHistory(1, "Webview.GoForward")
+}
+
+func (wv *Webview) navigateHistory(delta int, scope string) error {
 	ctx, cancel := context.WithTimeout(wv.ctx, wv.timeout)
 	defer cancel()
 
-	_, err := wv.client.Call(ctx, "Page.goBackOrForward", map[string]any{
-		"delta": 1,
+	history, err := wv.client.Call(ctx, "Page.getNavigationHistory", nil)
+	if err != nil {
+		return coreerr.E(scope, "failed to get navigation history", err)
+	}
+
+	currentIndexFloat, ok := history["currentIndex"].(float64)
+	if !ok {
+		return coreerr.E(scope, "invalid navigation history index", nil)
+	}
+
+	entries, ok := history["entries"].([]any)
+	if !ok {
+		return coreerr.E(scope, "invalid navigation history entries", nil)
+	}
+
+	targetIndex := int(currentIndexFloat) + delta
+	if targetIndex < 0 || targetIndex >= len(entries) {
+		return coreerr.E(scope, "no navigation history entry available", nil)
+	}
+
+	entry, ok := entries[targetIndex].(map[string]any)
+	if !ok {
+		return coreerr.E(scope, "invalid navigation history entry", nil)
+	}
+
+	entryIDFloat, ok := entry["id"].(float64)
+	if !ok {
+		return coreerr.E(scope, "invalid navigation history entry id", nil)
+	}
+
+	_, err = wv.client.Call(ctx, "Page.navigateToHistoryEntry", map[string]any{
+		"entryId": int(entryIDFloat),
 	})
-	return err
+	if err != nil {
+		return coreerr.E(scope, "failed to navigate history", err)
+	}
+
+	return wv.waitForLoad(ctx)
 }
 
 // addConsoleMessage adds a console message to the log.
@@ -417,12 +509,8 @@ func (wv *Webview) addConsoleMessage(msg ConsoleMessage) {
 	wv.mu.Lock()
 	defer wv.mu.Unlock()
 
-	if len(wv.consoleLogs) >= wv.consoleLimit {
-		// Remove oldest messages
-		drop := min(100, len(wv.consoleLogs))
-		wv.consoleLogs = wv.consoleLogs[drop:]
-	}
 	wv.consoleLogs = append(wv.consoleLogs, msg)
+	wv.consoleLogs = trimConsoleMessages(wv.consoleLogs, wv.consoleLimit)
 }
 
 // enableConsole enables console message capture.
@@ -458,21 +546,11 @@ func (wv *Webview) enableConsole() error {
 
 // handleConsoleEvent processes console API events.
 func (wv *Webview) handleConsoleEvent(params map[string]any) {
-	msgType, _ := params["type"].(string)
+	msgType := normalizeConsoleType(core.Sprint(params["type"]))
 
 	// Extract args
 	args, _ := params["args"].([]any)
-	text := core.NewBuilder()
-	for i, arg := range args {
-		if argMap, ok := arg.(map[string]any); ok {
-			if val, ok := argMap["value"]; ok {
-				if i > 0 {
-					text.WriteString(" ")
-				}
-				text.WriteString(core.Sprint(val))
-			}
-		}
-	}
+	text := consoleTextFromArgs(args)
 
 	// Extract stack trace info
 	stackTrace, _ := params["stackTrace"].(map[string]any)
@@ -490,8 +568,8 @@ func (wv *Webview) handleConsoleEvent(params map[string]any) {
 
 	wv.addConsoleMessage(ConsoleMessage{
 		Type:      msgType,
-		Text:      text.String(),
-		Timestamp: time.Now(),
+		Text:      text,
+		Timestamp: consoleCaptureTimestamp(),
 		URL:       url,
 		Line:      line,
 		Column:    column,
@@ -557,12 +635,7 @@ func (wv *Webview) evaluate(ctx context.Context, script string) (any, error) {
 
 	// Check for exception
 	if exceptionDetails, ok := result["exceptionDetails"].(map[string]any); ok {
-		if exception, ok := exceptionDetails["exception"].(map[string]any); ok {
-			if description, ok := exception["description"].(string); ok {
-				return nil, coreerr.E("Webview.evaluate", description, nil)
-			}
-		}
-		return nil, coreerr.E("Webview.evaluate", "JavaScript error", nil)
+		return nil, runtimeExceptionError("Webview.evaluate", exceptionDetails)
 	}
 
 	// Extract result value
@@ -570,7 +643,7 @@ func (wv *Webview) evaluate(ctx context.Context, script string) (any, error) {
 		return resultObj["value"], nil
 	}
 
-	return nil, nil
+	return nil, coreerr.E("Webview.evaluate", "missing evaluation result", nil)
 }
 
 // querySelector finds an element by selector.

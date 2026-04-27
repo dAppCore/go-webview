@@ -5,11 +5,12 @@ import (
 	"context"
 	"iter"
 	"slices"
-	"sync"
-	"sync/atomic"
+	"sync"        // Note: AX-6 — internal concurrency primitive; structural per RFC §3/§6
+	"sync/atomic" // Note: AX-6 — internal concurrency primitive; structural per RFC §3/§6
 	"time"
 
 	core "dappco.re/go/core"
+	coreerr "dappco.re/go/log"
 )
 
 // ConsoleWatcher provides advanced console message watching capabilities.
@@ -20,12 +21,13 @@ type ConsoleWatcher struct {
 	filters       []ConsoleFilter
 	limit         int
 	handlers      []consoleHandlerRegistration
+	waiters       []consoleMessageWaiter
 	nextHandlerID atomic.Int64
 }
 
 // ConsoleFilter filters console messages.
 type ConsoleFilter struct {
-	Type    string // Filter by type (log, warn, error, info, debug), empty for all
+	Type    string // Exact message type match, empty for all
 	Pattern string // Filter by text pattern (substring match)
 }
 
@@ -37,9 +39,17 @@ type consoleHandlerRegistration struct {
 	handler ConsoleHandler
 }
 
-// NewConsoleWatcher creates a new console watcher for the webview.
+type consoleMessageWaiter struct {
+	filter ConsoleFilter
+	ch     chan ConsoleMessage
+}
+
+// Watch console messages from a Webview while a flow is running.
+//
+//	watcher := webview.NewConsoleWatcher(wv)
+//	watcher.AddFilter(webview.ConsoleFilter{Type: "error"})
 func NewConsoleWatcher(wv *Webview) *ConsoleWatcher {
-	cw := &ConsoleWatcher{
+	watcher := &ConsoleWatcher{
 		wv:       wv,
 		messages: make([]ConsoleMessage, 0, 1000),
 		filters:  make([]ConsoleFilter, 0),
@@ -47,12 +57,137 @@ func NewConsoleWatcher(wv *Webview) *ConsoleWatcher {
 		handlers: make([]consoleHandlerRegistration, 0),
 	}
 
+	if wv == nil || wv.client == nil {
+		return watcher
+	}
+
 	// Subscribe to console events from the webview's client
 	wv.client.OnEvent("Runtime.consoleAPICalled", func(params map[string]any) {
-		cw.handleConsoleEvent(params)
+		watcher.handleConsoleEvent(params)
 	})
 
-	return cw
+	return watcher
+}
+
+// normalizeConsoleType converts CDP event types to the package's stored value.
+//
+// It accepts legacy warning aliases and stores the compact warn form used by
+// the existing console message contract.
+func normalizeConsoleType(raw string) string {
+	normalized := core.Lower(core.Trim(core.Sprint(raw)))
+	if normalized == "warn" || normalized == "warning" {
+		return "warn"
+	}
+	return normalized
+}
+
+// canonicalConsoleType returns the RFC-canonical console type name.
+func canonicalConsoleType(raw string) string {
+	normalized := core.Lower(core.Trim(core.Sprint(raw)))
+	if normalized == "warn" || normalized == "warning" {
+		return "warning"
+	}
+	return normalized
+}
+
+// consoleTextFromArgs extracts message text from Runtime.consoleAPICalled args.
+func consoleTextFromArgs(args []any) string {
+	text := core.NewBuilder()
+	for i, arg := range args {
+		if i > 0 {
+			text.WriteString(" ")
+		}
+		text.WriteString(consoleArgText(arg))
+	}
+
+	return text.String()
+}
+
+func consoleArgText(arg any) string {
+	remoteObj, ok := arg.(map[string]any)
+	if !ok {
+		return consoleValueToString(arg)
+	}
+
+	if value, ok := remoteObj["value"]; ok {
+		return consoleValueToString(value)
+	}
+
+	if desc, ok := remoteObj["description"].(string); ok && desc != "" {
+		return desc
+	}
+
+	if preview, ok := remoteObj["preview"].(map[string]any); ok {
+		if description, ok := preview["description"].(string); ok && description != "" {
+			return description
+		}
+	}
+
+	if preview, ok := remoteObj["preview"].(map[string]any); ok {
+		if value, ok := preview["value"].(string); ok && value != "" {
+			return value
+		}
+	}
+
+	if r := core.JSONMarshal(remoteObj); r.OK {
+		if encoded, ok := r.Value.([]byte); ok {
+			return string(encoded)
+		}
+	}
+
+	return ""
+}
+
+func consoleValueToString(value any) string {
+	if value == nil {
+		return "null"
+	}
+	if valueStr, ok := value.(string); ok {
+		return valueStr
+	}
+
+	if r := core.JSONMarshal(value); r.OK {
+		if encoded, ok := r.Value.([]byte); ok {
+			return string(encoded)
+		}
+	}
+
+	return core.Sprint(value)
+}
+
+func consoleCaptureTimestamp() time.Time {
+	return time.Now()
+}
+
+func trimConsoleMessages(messages []ConsoleMessage, limit int) []ConsoleMessage {
+	if limit < 0 {
+		limit = 0
+	}
+
+	if overflow := len(messages) - limit; overflow > 0 {
+		copy(messages, messages[overflow:])
+		messages = messages[:len(messages)-overflow]
+	}
+
+	return messages
+}
+
+func runtimeExceptionText(exceptionDetails map[string]any) string {
+	if exception, ok := exceptionDetails["exception"].(map[string]any); ok {
+		if description, ok := exception["description"].(string); ok && description != "" {
+			return description
+		}
+	}
+
+	if text, ok := exceptionDetails["text"].(string); ok && text != "" {
+		return text
+	}
+
+	return "JavaScript error"
+}
+
+func runtimeExceptionError(scope string, exceptionDetails map[string]any) error {
+	return coreerr.E(scope, runtimeExceptionText(exceptionDetails), nil)
 }
 
 // AddFilter adds a filter to the watcher.
@@ -97,10 +232,25 @@ func (cw *ConsoleWatcher) removeHandler(id int64) {
 	}
 }
 
-// SetLimit sets the maximum number of messages to retain.
+func (cw *ConsoleWatcher) removeWaiter(ch chan ConsoleMessage) {
+	cw.mu.Lock()
+	defer cw.mu.Unlock()
+
+	for i, waiter := range cw.waiters {
+		if waiter.ch == ch {
+			cw.waiters = slices.Delete(cw.waiters, i, i+1)
+			return
+		}
+	}
+}
+
+// SetLimit replaces the retention limit for future appends.
 func (cw *ConsoleWatcher) SetLimit(limit int) {
 	cw.mu.Lock()
 	defer cw.mu.Unlock()
+	if limit < 0 {
+		limit = 0
+	}
 	cw.limit = limit
 }
 
@@ -156,7 +306,7 @@ func (cw *ConsoleWatcher) ErrorsAll() iter.Seq[ConsoleMessage] {
 		defer cw.mu.RUnlock()
 
 		for _, msg := range cw.messages {
-			if msg.Type == "error" {
+			if canonicalConsoleType(msg.Type) == "error" {
 				if !yield(msg) {
 					return
 				}
@@ -177,7 +327,7 @@ func (cw *ConsoleWatcher) WarningsAll() iter.Seq[ConsoleMessage] {
 		defer cw.mu.RUnlock()
 
 		for _, msg := range cw.messages {
-			if msg.Type == "warning" {
+			if canonicalConsoleType(msg.Type) == "warning" {
 				if !yield(msg) {
 					return
 				}
@@ -195,7 +345,6 @@ func (cw *ConsoleWatcher) Clear() {
 
 // WaitForMessage waits for a message matching the filter.
 func (cw *ConsoleWatcher) WaitForMessage(ctx context.Context, filter ConsoleFilter) (*ConsoleMessage, error) {
-	// First check existing messages
 	cw.mu.RLock()
 	for _, msg := range cw.messages {
 		if cw.matchesSingleFilter(msg, filter) {
@@ -205,24 +354,25 @@ func (cw *ConsoleWatcher) WaitForMessage(ctx context.Context, filter ConsoleFilt
 	}
 	cw.mu.RUnlock()
 
-	// Set up a channel for new messages
-	msgCh := make(chan ConsoleMessage, 1)
-	handler := func(msg ConsoleMessage) {
+	messageCh := make(chan ConsoleMessage, 1)
+	cw.mu.Lock()
+	for _, msg := range cw.messages {
 		if cw.matchesSingleFilter(msg, filter) {
-			select {
-			case msgCh <- msg:
-			default:
-			}
+			cw.mu.Unlock()
+			return &msg, nil
 		}
 	}
-
-	handlerID := cw.addHandler(handler)
-	defer cw.removeHandler(handlerID)
+	cw.waiters = append(cw.waiters, consoleMessageWaiter{
+		filter: filter,
+		ch:     messageCh,
+	})
+	cw.mu.Unlock()
+	defer cw.removeWaiter(messageCh)
 
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
-	case msg := <-msgCh:
+	case msg := <-messageCh:
 		return &msg, nil
 	}
 }
@@ -238,7 +388,7 @@ func (cw *ConsoleWatcher) HasErrors() bool {
 	defer cw.mu.RUnlock()
 
 	for _, msg := range cw.messages {
-		if msg.Type == "error" {
+		if canonicalConsoleType(msg.Type) == "error" {
 			return true
 		}
 	}
@@ -259,7 +409,7 @@ func (cw *ConsoleWatcher) ErrorCount() int {
 
 	count := 0
 	for _, msg := range cw.messages {
-		if msg.Type == "error" {
+		if canonicalConsoleType(msg.Type) == "error" {
 			count++
 		}
 	}
@@ -268,21 +418,11 @@ func (cw *ConsoleWatcher) ErrorCount() int {
 
 // handleConsoleEvent processes incoming console events.
 func (cw *ConsoleWatcher) handleConsoleEvent(params map[string]any) {
-	msgType, _ := params["type"].(string)
+	msgType := canonicalConsoleType(core.Sprint(params["type"]))
 
 	// Extract args
 	args, _ := params["args"].([]any)
-	text := core.NewBuilder()
-	for i, arg := range args {
-		if argMap, ok := arg.(map[string]any); ok {
-			if val, ok := argMap["value"]; ok {
-				if i > 0 {
-					text.WriteString(" ")
-				}
-				text.WriteString(core.Sprint(val))
-			}
-		}
-	}
+	text := consoleTextFromArgs(args)
 
 	// Extract stack trace info
 	stackTrace, _ := params["stackTrace"].(map[string]any)
@@ -300,8 +440,8 @@ func (cw *ConsoleWatcher) handleConsoleEvent(params map[string]any) {
 
 	msg := ConsoleMessage{
 		Type:      msgType,
-		Text:      text.String(),
-		Timestamp: time.Now(),
+		Text:      text,
+		Timestamp: consoleCaptureTimestamp(),
 		URL:       url,
 		Line:      line,
 		Column:    column,
@@ -314,16 +454,22 @@ func (cw *ConsoleWatcher) handleConsoleEvent(params map[string]any) {
 func (cw *ConsoleWatcher) addMessage(msg ConsoleMessage) {
 	cw.mu.Lock()
 
-	// Enforce limit
-	if len(cw.messages) >= cw.limit {
-		drop := min(100, len(cw.messages))
-		cw.messages = cw.messages[drop:]
-	}
 	cw.messages = append(cw.messages, msg)
+	cw.messages = trimConsoleMessages(cw.messages, cw.limit)
 
 	// Copy handlers to call outside lock
 	handlers := slices.Clone(cw.handlers)
+	waiters := slices.Clone(cw.waiters)
 	cw.mu.Unlock()
+
+	for _, waiter := range waiters {
+		if cw.matchesSingleFilter(msg, waiter.filter) {
+			select {
+			case waiter.ch <- msg:
+			default:
+			}
+		}
+	}
 
 	// Call handlers
 	for _, registration := range handlers {
@@ -331,7 +477,11 @@ func (cw *ConsoleWatcher) addMessage(msg ConsoleMessage) {
 	}
 }
 
-// matchesFilter checks if a message matches any filter.
+// matchesFilter checks whether a message matches the active filter set.
+//
+// When no filters are configured, every message matches. When filters exist,
+// the watcher uses OR semantics: a message is included as soon as it matches
+// one configured filter.
 func (cw *ConsoleWatcher) matchesFilter(msg ConsoleMessage) bool {
 	if len(cw.filters) == 0 {
 		return true
@@ -346,8 +496,12 @@ func (cw *ConsoleWatcher) matchesFilter(msg ConsoleMessage) bool {
 
 // matchesSingleFilter checks if a message matches a specific filter.
 func (cw *ConsoleWatcher) matchesSingleFilter(msg ConsoleMessage, filter ConsoleFilter) bool {
-	if filter.Type != "" && msg.Type != filter.Type {
-		return false
+	if filter.Type != "" {
+		filterType := canonicalConsoleType(filter.Type)
+		messageType := canonicalConsoleType(msg.Type)
+		if messageType != filterType {
+			return false
+		}
 	}
 	if filter.Pattern != "" {
 		// Simple substring match
@@ -356,6 +510,10 @@ func (cw *ConsoleWatcher) matchesSingleFilter(msg ConsoleMessage, filter Console
 		}
 	}
 	return true
+}
+
+func isWarningType(messageType string) bool {
+	return canonicalConsoleType(messageType) == "warning"
 }
 
 // containsString checks if s contains substr (case-sensitive).
@@ -388,7 +546,9 @@ type ExceptionWatcher struct {
 	mu            sync.RWMutex
 	wv            *Webview
 	exceptions    []ExceptionInfo
+	limit         int
 	handlers      []exceptionHandlerRegistration
+	waiters       []exceptionWaiter
 	nextHandlerID atomic.Int64
 }
 
@@ -397,12 +557,24 @@ type exceptionHandlerRegistration struct {
 	handler func(ExceptionInfo)
 }
 
-// NewExceptionWatcher creates a new exception watcher.
+type exceptionWaiter struct {
+	ch chan ExceptionInfo
+}
+
+// Capture Runtime.exceptionThrown events from the active page.
+//
+//	watcher := webview.NewExceptionWatcher(wv)
+//	exc, err := watcher.WaitForException(ctx)
 func NewExceptionWatcher(wv *Webview) *ExceptionWatcher {
 	ew := &ExceptionWatcher{
 		wv:         wv,
 		exceptions: make([]ExceptionInfo, 0),
+		limit:      1000,
 		handlers:   make([]exceptionHandlerRegistration, 0),
+	}
+
+	if wv == nil || wv.client == nil {
+		return ew
 	}
 
 	// Subscribe to exception events
@@ -481,9 +653,20 @@ func (ew *ExceptionWatcher) removeHandler(id int64) {
 	}
 }
 
+func (ew *ExceptionWatcher) removeWaiter(ch chan ExceptionInfo) {
+	ew.mu.Lock()
+	defer ew.mu.Unlock()
+
+	for i, waiter := range ew.waiters {
+		if waiter.ch == ch {
+			ew.waiters = slices.Delete(ew.waiters, i, i+1)
+			return
+		}
+	}
+}
+
 // WaitForException waits for an exception to be thrown.
 func (ew *ExceptionWatcher) WaitForException(ctx context.Context) (*ExceptionInfo, error) {
-	// Check existing exceptions first
 	ew.mu.RLock()
 	if len(ew.exceptions) > 0 {
 		exc := ew.exceptions[len(ew.exceptions)-1]
@@ -492,17 +675,16 @@ func (ew *ExceptionWatcher) WaitForException(ctx context.Context) (*ExceptionInf
 	}
 	ew.mu.RUnlock()
 
-	// Set up a channel for new exceptions
 	excCh := make(chan ExceptionInfo, 1)
-	handler := func(exc ExceptionInfo) {
-		select {
-		case excCh <- exc:
-		default:
-		}
+	ew.mu.Lock()
+	if len(ew.exceptions) > 0 {
+		exc := ew.exceptions[len(ew.exceptions)-1]
+		ew.mu.Unlock()
+		return &exc, nil
 	}
-
-	handlerID := ew.addHandler(handler)
-	defer ew.removeHandler(handlerID)
+	ew.waiters = append(ew.waiters, exceptionWaiter{ch: excCh})
+	ew.mu.Unlock()
+	defer ew.removeWaiter(excCh)
 
 	select {
 	case <-ctx.Done():
@@ -541,11 +723,7 @@ func (ew *ExceptionWatcher) handleException(params map[string]any) {
 	}
 
 	// Try to get exception value description
-	if exc, ok := exceptionDetails["exception"].(map[string]any); ok {
-		if desc, ok := exc["description"].(string); ok && desc != "" {
-			text = desc
-		}
-	}
+	text = runtimeExceptionText(exceptionDetails)
 
 	info := ExceptionInfo{
 		Text:         text,
@@ -558,8 +736,17 @@ func (ew *ExceptionWatcher) handleException(params map[string]any) {
 
 	ew.mu.Lock()
 	ew.exceptions = append(ew.exceptions, info)
+	ew.exceptions = trimExceptionInfos(ew.exceptions, ew.limit)
 	handlers := slices.Clone(ew.handlers)
+	waiters := slices.Clone(ew.waiters)
 	ew.mu.Unlock()
+
+	for _, waiter := range waiters {
+		select {
+		case waiter.ch <- info:
+		default:
+		}
+	}
 
 	// Call handlers
 	for _, registration := range handlers {
@@ -572,7 +759,7 @@ func FormatConsoleOutput(messages []ConsoleMessage) string {
 	output := core.NewBuilder()
 	for _, msg := range messages {
 		prefix := ""
-		switch msg.Type {
+		switch canonicalConsoleType(msg.Type) {
 		case "error":
 			prefix = "[ERROR]"
 		case "warning":
@@ -585,7 +772,46 @@ func FormatConsoleOutput(messages []ConsoleMessage) string {
 			prefix = "[LOG]"
 		}
 		timestamp := msg.Timestamp.Format("15:04:05.000")
-		output.WriteString(core.Sprintf("%s %s %s\n", timestamp, prefix, msg.Text))
+		output.WriteString(core.Sprintf("%s %s %s\n", timestamp, prefix, sanitizeConsoleText(msg.Text)))
 	}
 	return output.String()
+}
+
+func trimExceptionInfos(exceptions []ExceptionInfo, limit int) []ExceptionInfo {
+	if limit < 0 {
+		limit = 0
+	}
+
+	if overflow := len(exceptions) - limit; overflow > 0 {
+		copy(exceptions, exceptions[overflow:])
+		exceptions = exceptions[:len(exceptions)-overflow]
+	}
+
+	return exceptions
+}
+
+func sanitizeConsoleText(text string) string {
+	b := core.NewBuilder()
+	b.Grow(len(text))
+
+	for _, r := range text {
+		switch r {
+		case '\n':
+			b.WriteString(`\n`)
+		case '\r':
+			b.WriteString(`\r`)
+		case '\t':
+			b.WriteString(`\t`)
+		case '\x1b':
+			b.WriteString(`\x1b`)
+		default:
+			if r < 0x20 || r == 0x7f {
+				b.WriteByte(' ')
+				continue
+			}
+			b.WriteRune(r)
+		}
+	}
+
+	return b.String()
 }

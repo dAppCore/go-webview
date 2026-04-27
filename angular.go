@@ -6,7 +6,7 @@ import (
 	"time"
 
 	core "dappco.re/go/core"
-	coreerr "dappco.re/go/core/log"
+	coreerr "dappco.re/go/log"
 )
 
 // AngularHelper provides Angular-specific testing utilities.
@@ -15,7 +15,10 @@ type AngularHelper struct {
 	timeout time.Duration
 }
 
-// NewAngularHelper creates a new Angular helper for the webview.
+// Create Angular-specific helpers for a page already loaded in the Webview.
+//
+//	ah := webview.NewAngularHelper(wv)
+//	ah.SetTimeout(15 * time.Second)
 func NewAngularHelper(wv *Webview) *AngularHelper {
 	return &AngularHelper{
 		wv:      wv,
@@ -42,10 +45,10 @@ func (ah *AngularHelper) waitForAngular(ctx context.Context) error {
 	// Check if Angular is present
 	isAngular, err := ah.isAngularApp(ctx)
 	if err != nil {
-		return err
+		return coreerr.E("AngularHelper.WaitForAngular", "failed to detect Angular app", err)
 	}
 	if !isAngular {
-		return coreerr.E("AngularHelper.waitForAngular", "not an Angular application", nil)
+		return coreerr.E("AngularHelper.WaitForAngular", "not an Angular application", nil)
 	}
 
 	// Wait for Zone.js stability
@@ -78,7 +81,7 @@ func (ah *AngularHelper) isAngularApp(ctx context.Context) (bool, error) {
 
 	result, err := ah.wv.evaluate(ctx, script)
 	if err != nil {
-		return false, err
+		return false, coreerr.E("AngularHelper.WaitForAngular", "failed to detect Angular app", err)
 	}
 
 	isAngular, ok := result.(bool)
@@ -161,14 +164,20 @@ func (ah *AngularHelper) waitForZoneStability(ctx context.Context) error {
 	result, err := ah.wv.evaluate(ctx, script)
 	if err != nil {
 		// If the script fails, fall back to simple polling
-		return ah.pollForStability(ctx)
+		if pollErr := ah.pollForStability(ctx); pollErr != nil {
+			return coreerr.E("AngularHelper.WaitForAngular", "failed to wait for Zone stability", pollErr)
+		}
+		return nil
 	}
 
 	if stable, ok := result.(bool); ok && stable {
 		return nil
 	}
 
-	return ah.pollForStability(ctx)
+	if err := ah.pollForStability(ctx); err != nil {
+		return coreerr.E("AngularHelper.WaitForAngular", "failed to wait for Zone stability", err)
+	}
+	return nil
 }
 
 // pollForStability polls for Angular stability as a fallback.
@@ -189,7 +198,7 @@ func (ah *AngularHelper) pollForStability(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return coreerr.E("AngularHelper.WaitForComponent", "timed out waiting for component", ctx.Err())
 		case <-ticker.C:
 			result, err := ah.wv.evaluate(ctx, script)
 			if err != nil {
@@ -236,7 +245,10 @@ func (ah *AngularHelper) NavigateByRouter(path string) error {
 	}
 
 	// Wait for navigation to complete
-	return ah.waitForZoneStability(ctx)
+	if err := ah.waitForZoneStability(ctx); err != nil {
+		return coreerr.E("AngularHelper.NavigateByRouter", "failed to wait for router navigation", err)
+	}
+	return nil
 }
 
 // GetRouterState returns the current Angular router state.
@@ -269,7 +281,7 @@ func (ah *AngularHelper) GetRouterState() (*AngularRouterState, error) {
 
 	result, err := ah.wv.evaluate(ctx, script)
 	if err != nil {
-		return nil, err
+		return nil, coreerr.E("AngularHelper.GetRouterState", "failed to read router state", err)
 	}
 
 	if result == nil {
@@ -286,27 +298,12 @@ func (ah *AngularHelper) GetRouterState() (*AngularRouterState, error) {
 		URL: getString(resultMap, "url"),
 	}
 
-	if fragment, ok := resultMap["fragment"].(string); ok {
-		state.Fragment = fragment
+	if fragment, ok := resultMap["fragment"]; ok && fragment != nil {
+		state.Fragment = core.Sprint(fragment)
 	}
 
-	if params, ok := resultMap["params"].(map[string]any); ok {
-		state.Params = make(map[string]string)
-		for k, v := range params {
-			if s, ok := v.(string); ok {
-				state.Params[k] = s
-			}
-		}
-	}
-
-	if queryParams, ok := resultMap["queryParams"].(map[string]any); ok {
-		state.QueryParams = make(map[string]string)
-		for k, v := range queryParams {
-			if s, ok := v.(string); ok {
-				state.QueryParams[k] = s
-			}
-		}
-	}
+	state.Params = copyStringOnlyMap(resultMap["params"])
+	state.QueryParams = copyStringOnlyMap(resultMap["queryParams"])
 
 	return state, nil
 }
@@ -340,7 +337,11 @@ func (ah *AngularHelper) GetComponentProperty(selector, propertyName string) (an
 			})()
 		`, formatJSValue(selector), formatJSValue(propertyName))
 
-	return ah.wv.evaluate(ctx, script)
+	result, err := ah.wv.evaluate(ctx, script)
+	if err != nil {
+		return nil, coreerr.E("AngularHelper.GetComponentProperty", "failed to read component property", err)
+	}
+	return result, nil
 }
 
 // SetComponentProperty sets a property on an Angular component.
@@ -373,7 +374,10 @@ func (ah *AngularHelper) SetComponentProperty(selector, propertyName string, val
 		`, formatJSValue(selector), formatJSValue(propertyName), formatJSValue(value))
 
 	_, err := ah.wv.evaluate(ctx, script)
-	return err
+	if err != nil {
+		return coreerr.E("AngularHelper.SetComponentProperty", "failed to set component property", err)
+	}
+	return nil
 }
 
 // CallComponentMethod calls a method on an Angular component.
@@ -416,7 +420,11 @@ func (ah *AngularHelper) CallComponentMethod(selector, methodName string, args .
 			})()
 		`, formatJSValue(selector), formatJSValue(methodName), argsStr.String())
 
-	return ah.wv.evaluate(ctx, script)
+	result, err := ah.wv.evaluate(ctx, script)
+	if err != nil {
+		return nil, coreerr.E("AngularHelper.CallComponentMethod", "failed to call component method", err)
+	}
+	return result, nil
 }
 
 // TriggerChangeDetection manually triggers Angular change detection.
@@ -444,7 +452,10 @@ func (ah *AngularHelper) TriggerChangeDetection() error {
 	`
 
 	_, err := ah.wv.evaluate(ctx, script)
-	return err
+	if err != nil {
+		return coreerr.E("AngularHelper.TriggerChangeDetection", "failed to trigger change detection", err)
+	}
+	return nil
 }
 
 // GetService gets an Angular service by token name.
@@ -471,7 +482,11 @@ func (ah *AngularHelper) GetService(serviceName string) (any, error) {
 		})()
 	`, serviceName)
 
-	return ah.wv.evaluate(ctx, script)
+	result, err := ah.wv.evaluate(ctx, script)
+	if err != nil {
+		return nil, coreerr.E("AngularHelper.GetService", "failed to get Angular service", err)
+	}
+	return result, nil
 }
 
 // WaitForComponent waits for an Angular component to be present.
@@ -536,7 +551,10 @@ func (ah *AngularHelper) DispatchEvent(selector, eventName string, detail any) e
 		`, formatJSValue(selector), formatJSValue(eventName), detailStr)
 
 	_, err := ah.wv.evaluate(ctx, script)
-	return err
+	if err != nil {
+		return coreerr.E("AngularHelper.DispatchEvent", "failed to dispatch event", err)
+	}
+	return nil
 }
 
 // GetNgModel gets the value of an ngModel-bound input.
@@ -563,7 +581,11 @@ func (ah *AngularHelper) GetNgModel(selector string) (any, error) {
 		})()
 	`, selector)
 
-	return ah.wv.evaluate(ctx, script)
+	result, err := ah.wv.evaluate(ctx, script)
+	if err != nil {
+		return nil, coreerr.E("AngularHelper.GetNgModel", "failed to read ngModel value", err)
+	}
+	return result, nil
 }
 
 // SetNgModel sets the value of an ngModel-bound input.
@@ -601,7 +623,10 @@ func (ah *AngularHelper) SetNgModel(selector string, value any) error {
 		`, formatJSValue(selector), formatJSValue(value))
 
 	_, err := ah.wv.evaluate(ctx, script)
-	return err
+	if err != nil {
+		return coreerr.E("AngularHelper.SetNgModel", "failed to set ngModel value", err)
+	}
+	return nil
 }
 
 // Helper functions
@@ -611,6 +636,27 @@ func getString(m map[string]any, key string) string {
 		return v
 	}
 	return ""
+}
+
+func copyStringOnlyMap(value any) map[string]string {
+	switch typed := value.(type) {
+	case map[string]any:
+		result := make(map[string]string, len(typed))
+		for key, item := range typed {
+			if text, ok := item.(string); ok {
+				result[key] = text
+			}
+		}
+		return result
+	case map[string]string:
+		result := make(map[string]string, len(typed))
+		for key, item := range typed {
+			result[key] = item
+		}
+		return result
+	default:
+		return nil
+	}
 }
 
 func formatJSValue(v any) string {

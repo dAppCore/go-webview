@@ -6,4 +6,6 @@ require github.com/gorilla/websocket v1.5.3 // Note: gorilla/websocket — WebSo
 
 require dappco.re/go/log v0.8.0-alpha.1
 
-require dappco.re/go/core v0.8.0-alpha.1
+require dappco.re/go v0.9.0
+
+replace dappco.re/go/log => github.com/dappcore/go-log v0.8.0-alpha.1

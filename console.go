@@ -9,7 +9,7 @@ import (
 	"sync/atomic" // Note: AX-6 — internal concurrency primitive; structural per RFC §3/§6
 	"time"
 
-	core "dappco.re/go/core"
+	core "dappco.re/go"
 	coreerr "dappco.re/go/log"
 )
 

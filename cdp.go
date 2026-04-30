@@ -13,7 +13,7 @@ import (
 	"sync/atomic" // Note: AX-6 — internal concurrency primitive; structural per RFC §3/§6
 	"time"
 
-	core "dappco.re/go/core"
+	core "dappco.re/go"
 	coreerr "dappco.re/go/log"
 
 	"github.com/gorilla/websocket"
@@ -380,13 +380,15 @@ func (c *CDPClient) NewTab(url string) (*CDPClient, error) {
 }
 
 // CloseTab closes the current tab (target).
-func (c *CDPClient) CloseTab() error {
+func (c *CDPClient) CloseTab() (err error) {
 	targetID, err := targetIDFromWebSocketURL(c.wsURL)
 	if err != nil {
 		return coreerr.E("CDPClient.CloseTab", "failed to determine target ID", err)
 	}
 	defer func() {
-		_ = c.Close()
+		if closeErr := c.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
 	}()
 
 	ctx, cancel := context.WithTimeout(c.ctx, debugEndpointTimeout)
@@ -615,7 +617,7 @@ func canonicalDebugURL(debugURL any) string {
 	return core.TrimSuffix(u.String(), "/")
 }
 
-func doDebugRequest(ctx context.Context, debugHTTPURL any, endpoint, rawQuery string) ([]byte, error) {
+func doDebugRequest(ctx context.Context, debugHTTPURL any, endpoint, rawQuery string) (body []byte, err error) {
 	baseURL, err := cdpURLFromAny(debugHTTPURL)
 	if err != nil {
 		return nil, err
@@ -636,13 +638,17 @@ func doDebugRequest(ctx context.Context, debugHTTPURL any, endpoint, rawQuery st
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
+	}()
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return nil, coreerr.E("CDPClient.doDebugRequest", "debug endpoint returned "+resp.Status, nil)
 	}
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxDebugResponseBytes+1))
+	body, err = io.ReadAll(io.LimitReader(resp.Body, maxDebugResponseBytes+1))
 	if err != nil {
 		return nil, err
 	}

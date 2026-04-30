@@ -41,7 +41,7 @@ import (
 	"sync"            // Note: AX-6 — internal concurrency primitive; structural per RFC §3/§6
 	"time"
 
-	core "dappco.re/go/core"
+	core "dappco.re/go"
 	coreerr "dappco.re/go/log"
 )
 
@@ -141,16 +141,19 @@ func New(opts ...Option) (*Webview, error) {
 		consoleLimit: 1000,
 	}
 
-	cleanupOnError := func() {
+	cleanupOnError := func() error {
 		cancel()
 		if wv.client != nil {
-			_ = wv.client.Close()
+			return wv.client.Close()
 		}
+		return nil
 	}
 
 	for _, opt := range opts {
 		if err := opt(wv); err != nil {
-			cleanupOnError()
+			if cleanupErr := cleanupOnError(); cleanupErr != nil {
+				return nil, coreerr.E("Webview.New", "cleanup after option failure", coreerr.Join(err, cleanupErr))
+			}
 			return nil, err
 		}
 	}
@@ -162,7 +165,9 @@ func New(opts ...Option) (*Webview, error) {
 
 	// Enable console capture
 	if err := wv.enableConsole(); err != nil {
-		cleanupOnError()
+		if cleanupErr := cleanupOnError(); cleanupErr != nil {
+			return nil, coreerr.E("Webview.New", "cleanup after console setup failure", coreerr.Join(err, cleanupErr))
+		}
 		return nil, coreerr.E("Webview.New", "failed to enable console capture", err)
 	}
 

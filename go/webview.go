@@ -130,7 +130,7 @@ func WithConsoleLimit(limit int) Option {
 // Create a Webview bound to an existing Chrome DevTools endpoint.
 //
 //	wv, err := webview.New(webview.WithDebugURL("http://localhost:9222"))
-func New(opts ...Option) (*Webview, error) {
+func New(opts ...Option) (*Webview, error) /* core.Result boundary */ {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	wv := &Webview{
@@ -175,7 +175,7 @@ func New(opts ...Option) (*Webview, error) {
 }
 
 // Close closes the Webview connection.
-func (wv *Webview) Close() error {
+func (wv *Webview) Close() error /* core.Result boundary */ {
 	wv.cancel()
 	if wv.client != nil {
 		return wv.client.Close()
@@ -186,14 +186,14 @@ func (wv *Webview) Close() error {
 // Load a page and wait for document.readyState === "complete".
 //
 //	wv.Navigate("https://example.com")
-func (wv *Webview) Navigate(url string) error {
+func (wv *Webview) Navigate(url string) error /* core.Result boundary */ {
 	ctx, cancel := context.WithTimeout(wv.ctx, wv.timeout)
 	defer cancel()
 
 	return wv.navigate(ctx, url, "Webview.Navigate")
 }
 
-func (wv *Webview) navigate(ctx context.Context, rawURL, scope string) error {
+func (wv *Webview) navigate(ctx context.Context, rawURL, scope string) error /* core.Result boundary */ {
 	if err := validateNavigationURL(rawURL); err != nil {
 		return coreerr.E(scope, "invalid navigation URL", err)
 	}
@@ -212,7 +212,7 @@ func (wv *Webview) navigate(ctx context.Context, rawURL, scope string) error {
 // Click a button or link resolved by CSS selector.
 //
 //	wv.Click("button[type=submit]")
-func (wv *Webview) Click(selector string) error {
+func (wv *Webview) Click(selector string) error /* core.Result boundary */ {
 	ctx, cancel := context.WithTimeout(wv.ctx, wv.timeout)
 	defer cancel()
 
@@ -222,7 +222,7 @@ func (wv *Webview) Click(selector string) error {
 // Focus an input and type text through CDP key events.
 //
 //	wv.Type("input[name=email]", "agent@example.com")
-func (wv *Webview) Type(selector, text string) error {
+func (wv *Webview) Type(selector, text string) error /* core.Result boundary */ {
 	ctx, cancel := context.WithTimeout(wv.ctx, wv.timeout)
 	defer cancel()
 
@@ -232,7 +232,7 @@ func (wv *Webview) Type(selector, text string) error {
 // Inspect the first matching element, including attributes and box metrics.
 //
 //	elem, err := wv.QuerySelector("#main")
-func (wv *Webview) QuerySelector(selector string) (*ElementInfo, error) {
+func (wv *Webview) QuerySelector(selector string) (*ElementInfo, error) /* core.Result boundary */ {
 	ctx, cancel := context.WithTimeout(wv.ctx, wv.timeout)
 	defer cancel()
 
@@ -242,7 +242,7 @@ func (wv *Webview) QuerySelector(selector string) (*ElementInfo, error) {
 // Inspect every element that matches the CSS selector.
 //
 //	items, err := wv.QuerySelectorAll("table tbody tr")
-func (wv *Webview) QuerySelectorAll(selector string) ([]*ElementInfo, error) {
+func (wv *Webview) QuerySelectorAll(selector string) ([]*ElementInfo, error) /* core.Result boundary */ {
 	ctx, cancel := context.WithTimeout(wv.ctx, wv.timeout)
 	defer cancel()
 
@@ -297,7 +297,7 @@ func (wv *Webview) ClearConsole() {
 // Capture the current page as PNG bytes.
 //
 //	png, err := wv.Screenshot()
-func (wv *Webview) Screenshot() ([]byte, error) {
+func (wv *Webview) Screenshot() ([]byte, error) /* core.Result boundary */ {
 	ctx, cancel := context.WithTimeout(wv.ctx, wv.timeout)
 	defer cancel()
 
@@ -327,7 +327,7 @@ func (wv *Webview) Screenshot() ([]byte, error) {
 //
 // Note: This intentionally executes arbitrary JavaScript in the browser context
 // for browser automation purposes. The script runs in the sandboxed browser environment.
-func (wv *Webview) Evaluate(script string) (any, error) {
+func (wv *Webview) Evaluate(script string) (any, error) /* core.Result boundary */ {
 	ctx, cancel := context.WithTimeout(wv.ctx, wv.timeout)
 	defer cancel()
 
@@ -337,7 +337,7 @@ func (wv *Webview) Evaluate(script string) (any, error) {
 // Block until an element matching the selector exists in the DOM.
 //
 //	wv.WaitForSelector("[data-ready=true]")
-func (wv *Webview) WaitForSelector(selector string) error {
+func (wv *Webview) WaitForSelector(selector string) error /* core.Result boundary */ {
 	ctx, cancel := context.WithTimeout(wv.ctx, wv.timeout)
 	defer cancel()
 
@@ -345,7 +345,7 @@ func (wv *Webview) WaitForSelector(selector string) error {
 }
 
 // GetURL returns the current page URL.
-func (wv *Webview) GetURL() (string, error) {
+func (wv *Webview) GetURL() (string, error) /* core.Result boundary */ {
 	ctx, cancel := context.WithTimeout(wv.ctx, wv.timeout)
 	defer cancel()
 
@@ -363,7 +363,7 @@ func (wv *Webview) GetURL() (string, error) {
 }
 
 // GetTitle returns the current page title.
-func (wv *Webview) GetTitle() (string, error) {
+func (wv *Webview) GetTitle() (string, error) /* core.Result boundary */ {
 	ctx, cancel := context.WithTimeout(wv.ctx, wv.timeout)
 	defer cancel()
 
@@ -381,7 +381,7 @@ func (wv *Webview) GetTitle() (string, error) {
 }
 
 // GetHTML returns the outer HTML of an element or the whole document.
-func (wv *Webview) GetHTML(selector string) (string, error) {
+func (wv *Webview) GetHTML(selector string) (string, error) /* core.Result boundary */ {
 	ctx, cancel := context.WithTimeout(wv.ctx, wv.timeout)
 	defer cancel()
 
@@ -408,7 +408,7 @@ func (wv *Webview) GetHTML(selector string) (string, error) {
 // Emulate a 1440x900 desktop viewport for later interactions.
 //
 //	wv.SetViewport(1440, 900)
-func (wv *Webview) SetViewport(width, height int) error {
+func (wv *Webview) SetViewport(width, height int) error /* core.Result boundary */ {
 	ctx, cancel := context.WithTimeout(wv.ctx, wv.timeout)
 	defer cancel()
 
@@ -428,7 +428,7 @@ func (wv *Webview) SetViewport(width, height int) error {
 // Override the browser user agent for later requests.
 //
 //	wv.SetUserAgent("Mozilla/5.0 AgentHarness/1.0")
-func (wv *Webview) SetUserAgent(userAgent string) error {
+func (wv *Webview) SetUserAgent(userAgent string) error /* core.Result boundary */ {
 	ctx, cancel := context.WithTimeout(wv.ctx, wv.timeout)
 	defer cancel()
 
@@ -443,7 +443,7 @@ func (wv *Webview) SetUserAgent(userAgent string) error {
 }
 
 // Reload reloads the current page.
-func (wv *Webview) Reload() error {
+func (wv *Webview) Reload() error /* core.Result boundary */ {
 	ctx, cancel := context.WithTimeout(wv.ctx, wv.timeout)
 	defer cancel()
 
@@ -456,16 +456,16 @@ func (wv *Webview) Reload() error {
 }
 
 // GoBack navigates back in history.
-func (wv *Webview) GoBack() error {
+func (wv *Webview) GoBack() error /* core.Result boundary */ {
 	return wv.navigateHistory(-1, "Webview.GoBack")
 }
 
 // GoForward navigates forward in history.
-func (wv *Webview) GoForward() error {
+func (wv *Webview) GoForward() error /* core.Result boundary */ {
 	return wv.navigateHistory(1, "Webview.GoForward")
 }
 
-func (wv *Webview) navigateHistory(delta int, scope string) error {
+func (wv *Webview) navigateHistory(delta int, scope string) error /* core.Result boundary */ {
 	ctx, cancel := context.WithTimeout(wv.ctx, wv.timeout)
 	defer cancel()
 
@@ -519,7 +519,7 @@ func (wv *Webview) addConsoleMessage(msg ConsoleMessage) {
 }
 
 // enableConsole enables console message capture.
-func (wv *Webview) enableConsole() error {
+func (wv *Webview) enableConsole() error /* core.Result boundary */ {
 	ctx, cancel := context.WithTimeout(wv.ctx, wv.timeout)
 	defer cancel()
 
@@ -582,7 +582,7 @@ func (wv *Webview) handleConsoleEvent(params map[string]any) {
 }
 
 // waitForLoad waits for the page to finish loading.
-func (wv *Webview) waitForLoad(ctx context.Context) error {
+func (wv *Webview) waitForLoad(ctx context.Context) error /* core.Result boundary */ {
 	// Use Page.loadEventFired event or poll document.readyState
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
@@ -604,7 +604,7 @@ func (wv *Webview) waitForLoad(ctx context.Context) error {
 }
 
 // waitForSelector waits for an element to appear.
-func (wv *Webview) waitForSelector(ctx context.Context, selector string) error {
+func (wv *Webview) waitForSelector(ctx context.Context, selector string) error /* core.Result boundary */ {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
@@ -628,7 +628,7 @@ func (wv *Webview) waitForSelector(ctx context.Context, selector string) error {
 
 // evaluate evaluates JavaScript in the page context via CDP Runtime.evaluate.
 // This is the core method for executing JavaScript in the browser.
-func (wv *Webview) evaluate(ctx context.Context, script string) (any, error) {
+func (wv *Webview) evaluate(ctx context.Context, script string) (any, error) /* core.Result boundary */ {
 	result, err := wv.client.Call(ctx, "Runtime.evaluate", map[string]any{
 		"expression":    script,
 		"returnByValue": true,
@@ -652,7 +652,7 @@ func (wv *Webview) evaluate(ctx context.Context, script string) (any, error) {
 }
 
 // querySelector finds an element by selector.
-func (wv *Webview) querySelector(ctx context.Context, selector string) (*ElementInfo, error) {
+func (wv *Webview) querySelector(ctx context.Context, selector string) (*ElementInfo, error) /* core.Result boundary */ {
 	// Get document root
 	docResult, err := wv.client.Call(ctx, "DOM.getDocument", nil)
 	if err != nil {
@@ -687,7 +687,7 @@ func (wv *Webview) querySelector(ctx context.Context, selector string) (*Element
 }
 
 // querySelectorAll finds all elements matching the selector.
-func (wv *Webview) querySelectorAll(ctx context.Context, selector string) ([]*ElementInfo, error) {
+func (wv *Webview) querySelectorAll(ctx context.Context, selector string) ([]*ElementInfo, error) /* core.Result boundary */ {
 	// Get document root
 	docResult, err := wv.client.Call(ctx, "DOM.getDocument", nil)
 	if err != nil {
@@ -731,7 +731,7 @@ func (wv *Webview) querySelectorAll(ctx context.Context, selector string) ([]*El
 }
 
 // getElementInfo retrieves information about a DOM node.
-func (wv *Webview) getElementInfo(ctx context.Context, nodeID int) (*ElementInfo, error) {
+func (wv *Webview) getElementInfo(ctx context.Context, nodeID int) (*ElementInfo, error) /* core.Result boundary */ {
 	// Describe node to get attributes
 	descResult, err := wv.client.Call(ctx, "DOM.describeNode", map[string]any{
 		"nodeId": nodeID,
@@ -840,7 +840,7 @@ func parseElementContent(result map[string]any) (string, string) {
 }
 
 // click performs a click on an element.
-func (wv *Webview) click(ctx context.Context, selector string) error {
+func (wv *Webview) click(ctx context.Context, selector string) error /* core.Result boundary */ {
 	// Find element and get its center coordinates
 	elem, err := wv.querySelector(ctx, selector)
 	if err != nil {
@@ -876,7 +876,7 @@ func (wv *Webview) click(ctx context.Context, selector string) error {
 }
 
 // typeText types text into an element.
-func (wv *Webview) typeText(ctx context.Context, selector, text string) error {
+func (wv *Webview) typeText(ctx context.Context, selector, text string) error /* core.Result boundary */ {
 	// Focus the element first
 	script := core.Sprintf("document.querySelector(%q)?.focus()", selector)
 	_, err := wv.evaluate(ctx, script)

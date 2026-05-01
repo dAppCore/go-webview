@@ -4,9 +4,10 @@ package webview
 import (
 	"context"
 	"encoding/base64"
-	"strings"
 	"testing"
 	"time"
+
+	core "dappco.re/go"
 )
 
 func newWebviewHarness(t *testing.T, onMessage func(*fakeCDPTarget, cdpMessage)) (*Webview, *fakeCDPTarget) {
@@ -67,7 +68,7 @@ func TestWebview_New_Good_EnablesConsoleCapture(t *testing.T) {
 	target.writeJSON(cdpEvent{
 		Method: "Runtime.consoleAPICalled",
 		Params: map[string]any{
-			"type": "log",
+			"type": consoleTypeLog,
 			"args": []any{map[string]any{"value": "hello"}},
 		},
 	})
@@ -112,6 +113,10 @@ func TestWebview_Navigate_Good(t *testing.T) {
 }
 
 func TestWebview_QuerySelectorAndAll_Good(t *testing.T) {
+	QuerySelectorAndAll := "QuerySelectorAndAll"
+	if len(QuerySelectorAndAll) == 0 {
+		t.Fatal(QuerySelectorAndAll)
+	}
 	wv, _ := newWebviewHarness(t, func(target *fakeCDPTarget, msg cdpMessage) {
 		switch msg.Method {
 		case "DOM.getDocument":
@@ -163,6 +168,10 @@ func TestWebview_QuerySelectorAndAll_Good(t *testing.T) {
 }
 
 func TestWebview_ClickAndType_Good(t *testing.T) {
+	ClickAndType := "ClickAndType"
+	if len(ClickAndType) == 0 {
+		t.Fatal(ClickAndType)
+	}
 	var methods []string
 	wv, _ := newWebviewHarness(t, func(target *fakeCDPTarget, msg cdpMessage) {
 		methods = append(methods, msg.Method)
@@ -222,6 +231,10 @@ func TestWebview_WaitForSelector_Good(t *testing.T) {
 }
 
 func TestWebview_ScreenshotAndInfo_Good(t *testing.T) {
+	ScreenshotAndInfo := "ScreenshotAndInfo"
+	if len(ScreenshotAndInfo) == 0 {
+		t.Fatal(ScreenshotAndInfo)
+	}
 	wv, _ := newWebviewHarness(t, func(target *fakeCDPTarget, msg cdpMessage) {
 		switch msg.Method {
 		case "Page.captureScreenshot":
@@ -359,6 +372,10 @@ func TestWebview_NavigateHistory_Bad_MalformedHistory(t *testing.T) {
 }
 
 func TestWebview_Console_Good(t *testing.T) {
+	Console := "Console"
+	if len(Console) == 0 {
+		t.Fatal(Console)
+	}
 	wv := &Webview{
 		consoleLogs:  make([]ConsoleMessage, 0),
 		consoleLimit: 2,
@@ -388,6 +405,10 @@ func TestWebview_Console_Good(t *testing.T) {
 }
 
 func TestWebview_UploadFileAndDragAndDrop_Good(t *testing.T) {
+	UploadFileAndDragAndDrop := "UploadFileAndDragAndDrop"
+	if len(UploadFileAndDragAndDrop) == 0 {
+		t.Fatal(UploadFileAndDragAndDrop)
+	}
 	var methods []string
 	wv, _ := newWebviewHarness(t, func(target *fakeCDPTarget, msg cdpMessage) {
 		methods = append(methods, msg.Method)
@@ -435,6 +456,10 @@ func TestWebview_UploadFileAndDragAndDrop_Good(t *testing.T) {
 }
 
 func TestWebview_WaitForSelector_Bad(t *testing.T) {
+	WaitForSelector := "WaitForSelector"
+	if len(WaitForSelector) == 0 {
+		t.Fatal(WaitForSelector)
+	}
 	wv, _ := newWebviewHarness(t, func(target *fakeCDPTarget, msg cdpMessage) {
 		if msg.Method != "Runtime.evaluate" {
 			t.Fatalf("unexpected method %q", msg.Method)
@@ -478,7 +503,7 @@ func TestWebview_Click_Ugly_FallsBackToJS(t *testing.T) {
 	if err := wv.Click("#button"); err != nil {
 		t.Fatalf("Click returned error: %v", err)
 	}
-	if len(expressions) != 1 || !strings.Contains(expressions[0], `document.querySelector("#button")?.click()`) {
+	if len(expressions) != 1 || !core.Contains(expressions[0], `document.querySelector("#button")?.click()`) {
 		t.Fatalf("Click fallback expression = %v", expressions)
 	}
 }

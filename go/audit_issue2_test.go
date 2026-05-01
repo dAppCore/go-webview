@@ -3,7 +3,6 @@ package webview
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -159,8 +158,12 @@ func (s *fakeCDPServer) writeJSON(w http.ResponseWriter, value any) {
 	s.t.Helper()
 
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(value); err != nil {
-		s.t.Fatalf("failed to encode JSON: %v", err)
+	result := core.JSONMarshal(value)
+	if !result.OK {
+		s.t.Fatalf("failed to encode JSON: %v", result.Error())
+	}
+	if _, err := w.Write(result.Value.([]byte)); err != nil {
+		s.t.Fatalf("failed to write JSON: %v", err)
 	}
 }
 
@@ -437,12 +440,16 @@ func TestNewCDPClient_Bad_RejectsCrossHostWebSocket(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode([]TargetInfo{{
+		result := core.JSONMarshal([]TargetInfo{{
 			ID:                   "target-1",
 			Type:                 "page",
 			WebSocketDebuggerURL: "ws://example.com/devtools/page/target-1",
-		}}); err != nil {
-			t.Fatalf("failed to encode targets: %v", err)
+		}})
+		if !result.OK {
+			t.Fatalf("failed to encode targets: %v", result.Error())
+		}
+		if _, err := w.Write(result.Value.([]byte)); err != nil {
+			t.Fatalf("failed to write targets: %v", err)
 		}
 	}))
 	defer server.Close()
@@ -577,7 +584,7 @@ func TestConsoleWatcherWaitForMessage_Good_IsolatesTemporaryHandlers(t *testing.
 		results <- "error:" + msg.Text
 	}()
 	go func() {
-		msg, err := cw.WaitForMessage(ctx, ConsoleFilter{Type: "log"})
+		msg, err := cw.WaitForMessage(ctx, ConsoleFilter{Type: consoleTypeLog})
 		if err != nil {
 			errorsCh <- err
 			return
@@ -588,7 +595,7 @@ func TestConsoleWatcherWaitForMessage_Good_IsolatesTemporaryHandlers(t *testing.
 	time.Sleep(20 * time.Millisecond)
 	cw.addMessage(ConsoleMessage{Type: "error", Text: "first"})
 	time.Sleep(20 * time.Millisecond)
-	cw.addMessage(ConsoleMessage{Type: "log", Text: "second"})
+	cw.addMessage(ConsoleMessage{Type: consoleTypeLog, Text: "second"})
 
 	got := make(map[string]bool, 2)
 	for range 2 {

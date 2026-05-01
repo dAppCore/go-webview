@@ -1,0 +1,6 @@
+projectKey=core-go-webview
+serverUrl=https://sonar.lthn.sh
+serverVersion=26.4.0.121862
+dashboardUrl=https://sonar.lthn.sh/dashboard?id=core-go-webview
+ceTaskId=68301c41-f7a7-4a01-844b-920207957367
+ceTaskUrl=https://sonar.lthn.sh/api/ce/task?id=68301c41-f7a7-4a01-844b-920207957367

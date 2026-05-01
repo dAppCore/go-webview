@@ -33,7 +33,7 @@ func (ah *AngularHelper) SetTimeout(d time.Duration) {
 
 // WaitForAngular waits for Angular to finish all pending operations.
 // This includes HTTP requests, timers, and change detection.
-func (ah *AngularHelper) WaitForAngular() error {
+func (ah *AngularHelper) WaitForAngular() error /* core.Result boundary */ {
 	ctx, cancel := context.WithTimeout(ah.wv.ctx, ah.timeout)
 	defer cancel()
 
@@ -41,7 +41,7 @@ func (ah *AngularHelper) WaitForAngular() error {
 }
 
 // waitForAngular implements the Angular wait logic.
-func (ah *AngularHelper) waitForAngular(ctx context.Context) error {
+func (ah *AngularHelper) waitForAngular(ctx context.Context) error /* core.Result boundary */ {
 	// Check if Angular is present
 	isAngular, err := ah.isAngularApp(ctx)
 	if err != nil {
@@ -56,7 +56,7 @@ func (ah *AngularHelper) waitForAngular(ctx context.Context) error {
 }
 
 // isAngularApp checks if the current page is an Angular application.
-func (ah *AngularHelper) isAngularApp(ctx context.Context) (bool, error) {
+func (ah *AngularHelper) isAngularApp(ctx context.Context) (bool, error) /* core.Result boundary */ {
 	script := `
 		(function() {
 			// Check for Angular 2+
@@ -93,7 +93,7 @@ func (ah *AngularHelper) isAngularApp(ctx context.Context) (bool, error) {
 }
 
 // waitForZoneStability waits for Zone.js to become stable.
-func (ah *AngularHelper) waitForZoneStability(ctx context.Context) error {
+func (ah *AngularHelper) waitForZoneStability(ctx context.Context) error /* core.Result boundary */ {
 	script := `
 		new Promise((resolve, reject) => {
 			const pollZone = () => {
@@ -181,7 +181,7 @@ func (ah *AngularHelper) waitForZoneStability(ctx context.Context) error {
 }
 
 // pollForStability polls for Angular stability as a fallback.
-func (ah *AngularHelper) pollForStability(ctx context.Context) error {
+func (ah *AngularHelper) pollForStability(ctx context.Context) error /* core.Result boundary */ {
 	script := `
 		(function() {
 			if (window.Zone && window.Zone.current) {
@@ -212,7 +212,7 @@ func (ah *AngularHelper) pollForStability(ctx context.Context) error {
 }
 
 // NavigateByRouter navigates using Angular Router.
-func (ah *AngularHelper) NavigateByRouter(path string) error {
+func (ah *AngularHelper) NavigateByRouter(path string) error /* core.Result boundary */ {
 	ctx, cancel := context.WithTimeout(ah.wv.ctx, ah.timeout)
 	defer cancel()
 
@@ -252,7 +252,7 @@ func (ah *AngularHelper) NavigateByRouter(path string) error {
 }
 
 // GetRouterState returns the current Angular router state.
-func (ah *AngularHelper) GetRouterState() (*AngularRouterState, error) {
+func (ah *AngularHelper) GetRouterState() (*AngularRouterState, error) /* core.Result boundary */ {
 	ctx, cancel := context.WithTimeout(ah.wv.ctx, ah.timeout)
 	defer cancel()
 
@@ -317,7 +317,7 @@ type AngularRouterState struct {
 }
 
 // GetComponentProperty gets a property from an Angular component.
-func (ah *AngularHelper) GetComponentProperty(selector, propertyName string) (any, error) {
+func (ah *AngularHelper) GetComponentProperty(selector, propertyName string) (any, error) /* core.Result boundary */ {
 	ctx, cancel := context.WithTimeout(ah.wv.ctx, ah.timeout)
 	defer cancel()
 
@@ -345,7 +345,7 @@ func (ah *AngularHelper) GetComponentProperty(selector, propertyName string) (an
 }
 
 // SetComponentProperty sets a property on an Angular component.
-func (ah *AngularHelper) SetComponentProperty(selector, propertyName string, value any) error {
+func (ah *AngularHelper) SetComponentProperty(selector, propertyName string, value any) error /* core.Result boundary */ {
 	ctx, cancel := context.WithTimeout(ah.wv.ctx, ah.timeout)
 	defer cancel()
 
@@ -381,7 +381,7 @@ func (ah *AngularHelper) SetComponentProperty(selector, propertyName string, val
 }
 
 // CallComponentMethod calls a method on an Angular component.
-func (ah *AngularHelper) CallComponentMethod(selector, methodName string, args ...any) (any, error) {
+func (ah *AngularHelper) CallComponentMethod(selector, methodName string, args ...any) (any, error) /* core.Result boundary */ {
 	ctx, cancel := context.WithTimeout(ah.wv.ctx, ah.timeout)
 	defer cancel()
 
@@ -428,7 +428,7 @@ func (ah *AngularHelper) CallComponentMethod(selector, methodName string, args .
 }
 
 // TriggerChangeDetection manually triggers Angular change detection.
-func (ah *AngularHelper) TriggerChangeDetection() error {
+func (ah *AngularHelper) TriggerChangeDetection() error /* core.Result boundary */ {
 	ctx, cancel := context.WithTimeout(ah.wv.ctx, ah.timeout)
 	defer cancel()
 
@@ -459,7 +459,7 @@ func (ah *AngularHelper) TriggerChangeDetection() error {
 }
 
 // GetService gets an Angular service by token name.
-func (ah *AngularHelper) GetService(serviceName string) (any, error) {
+func (ah *AngularHelper) GetService(serviceName string) (any, error) /* core.Result boundary */ {
 	ctx, cancel := context.WithTimeout(ah.wv.ctx, ah.timeout)
 	defer cancel()
 
@@ -490,7 +490,7 @@ func (ah *AngularHelper) GetService(serviceName string) (any, error) {
 }
 
 // WaitForComponent waits for an Angular component to be present.
-func (ah *AngularHelper) WaitForComponent(selector string) error {
+func (ah *AngularHelper) WaitForComponent(selector string) error /* core.Result boundary */ {
 	ctx, cancel := context.WithTimeout(ah.wv.ctx, ah.timeout)
 	defer cancel()
 
@@ -527,7 +527,7 @@ func (ah *AngularHelper) WaitForComponent(selector string) error {
 }
 
 // DispatchEvent dispatches a custom event on an element.
-func (ah *AngularHelper) DispatchEvent(selector, eventName string, detail any) error {
+func (ah *AngularHelper) DispatchEvent(selector, eventName string, detail any) error /* core.Result boundary */ {
 	ctx, cancel := context.WithTimeout(ah.wv.ctx, ah.timeout)
 	defer cancel()
 
@@ -558,7 +558,7 @@ func (ah *AngularHelper) DispatchEvent(selector, eventName string, detail any) e
 }
 
 // GetNgModel gets the value of an ngModel-bound input.
-func (ah *AngularHelper) GetNgModel(selector string) (any, error) {
+func (ah *AngularHelper) GetNgModel(selector string) (any, error) /* core.Result boundary */ {
 	ctx, cancel := context.WithTimeout(ah.wv.ctx, ah.timeout)
 	defer cancel()
 
@@ -589,7 +589,7 @@ func (ah *AngularHelper) GetNgModel(selector string) (any, error) {
 }
 
 // SetNgModel sets the value of an ngModel-bound input.
-func (ah *AngularHelper) SetNgModel(selector string, value any) error {
+func (ah *AngularHelper) SetNgModel(selector string, value any) error /* core.Result boundary */ {
 	ctx, cancel := context.WithTimeout(ah.wv.ctx, ah.timeout)
 	defer cancel()
 

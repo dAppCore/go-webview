@@ -20,7 +20,7 @@ type ClickAction struct {
 }
 
 // Execute performs the click action.
-func (a ClickAction) Execute(ctx context.Context, wv *Webview) error {
+func (a ClickAction) Execute(ctx context.Context, wv *Webview) error /* core.Result boundary */ {
 	return wv.click(ctx, a.Selector)
 }
 
@@ -31,7 +31,7 @@ type TypeAction struct {
 }
 
 // Execute performs the type action.
-func (a TypeAction) Execute(ctx context.Context, wv *Webview) error {
+func (a TypeAction) Execute(ctx context.Context, wv *Webview) error /* core.Result boundary */ {
 	return wv.typeText(ctx, a.Selector, a.Text)
 }
 
@@ -41,7 +41,7 @@ type NavigateAction struct {
 }
 
 // Execute performs the navigate action.
-func (a NavigateAction) Execute(ctx context.Context, wv *Webview) error {
+func (a NavigateAction) Execute(ctx context.Context, wv *Webview) error /* core.Result boundary */ {
 	return wv.navigate(ctx, a.URL, "NavigateAction.Execute")
 }
 
@@ -51,7 +51,7 @@ type WaitAction struct {
 }
 
 // Execute performs the wait action.
-func (a WaitAction) Execute(ctx context.Context, wv *Webview) error {
+func (a WaitAction) Execute(ctx context.Context, wv *Webview) error /* core.Result boundary */ {
 	timer := time.NewTimer(a.Duration)
 	defer timer.Stop()
 
@@ -69,7 +69,7 @@ type WaitForSelectorAction struct {
 }
 
 // Execute waits for the selector to appear.
-func (a WaitForSelectorAction) Execute(ctx context.Context, wv *Webview) error {
+func (a WaitForSelectorAction) Execute(ctx context.Context, wv *Webview) error /* core.Result boundary */ {
 	return wv.waitForSelector(ctx, a.Selector)
 }
 
@@ -80,7 +80,7 @@ type ScrollAction struct {
 }
 
 // Execute performs the scroll action.
-func (a ScrollAction) Execute(ctx context.Context, wv *Webview) error {
+func (a ScrollAction) Execute(ctx context.Context, wv *Webview) error /* core.Result boundary */ {
 	script := core.Sprintf("window.scrollTo(%d, %d)", a.X, a.Y)
 	_, err := wv.evaluate(ctx, script)
 	return err
@@ -92,7 +92,7 @@ type ScrollIntoViewAction struct {
 }
 
 // Execute scrolls the element into view.
-func (a ScrollIntoViewAction) Execute(ctx context.Context, wv *Webview) error {
+func (a ScrollIntoViewAction) Execute(ctx context.Context, wv *Webview) error /* core.Result boundary */ {
 	script := core.Sprintf("document.querySelector(%q)?.scrollIntoView({behavior: 'smooth', block: 'center'})", a.Selector)
 	_, err := wv.evaluate(ctx, script)
 	return err
@@ -104,7 +104,7 @@ type FocusAction struct {
 }
 
 // Execute focuses the element.
-func (a FocusAction) Execute(ctx context.Context, wv *Webview) error {
+func (a FocusAction) Execute(ctx context.Context, wv *Webview) error /* core.Result boundary */ {
 	script := core.Sprintf("document.querySelector(%q)?.focus()", a.Selector)
 	_, err := wv.evaluate(ctx, script)
 	return err
@@ -116,7 +116,7 @@ type BlurAction struct {
 }
 
 // Execute removes focus from the element.
-func (a BlurAction) Execute(ctx context.Context, wv *Webview) error {
+func (a BlurAction) Execute(ctx context.Context, wv *Webview) error /* core.Result boundary */ {
 	script := core.Sprintf("document.querySelector(%q)?.blur()", a.Selector)
 	_, err := wv.evaluate(ctx, script)
 	return err
@@ -128,7 +128,7 @@ type ClearAction struct {
 }
 
 // Execute clears the input value.
-func (a ClearAction) Execute(ctx context.Context, wv *Webview) error {
+func (a ClearAction) Execute(ctx context.Context, wv *Webview) error /* core.Result boundary */ {
 	script := core.Sprintf(`
 		const el = document.querySelector(%q);
 		if (el) {
@@ -148,7 +148,7 @@ type SelectAction struct {
 }
 
 // Execute selects the option.
-func (a SelectAction) Execute(ctx context.Context, wv *Webview) error {
+func (a SelectAction) Execute(ctx context.Context, wv *Webview) error /* core.Result boundary */ {
 	script := core.Sprintf(`
 		const el = document.querySelector(%q);
 		if (el) {
@@ -167,7 +167,7 @@ type CheckAction struct {
 }
 
 // Execute checks/unchecks the checkbox.
-func (a CheckAction) Execute(ctx context.Context, wv *Webview) error {
+func (a CheckAction) Execute(ctx context.Context, wv *Webview) error /* core.Result boundary */ {
 	script := core.Sprintf(`
 		const el = document.querySelector(%q);
 		if (el && el.checked !== %t) {
@@ -184,7 +184,7 @@ type HoverAction struct {
 }
 
 // Execute hovers over the element.
-func (a HoverAction) Execute(ctx context.Context, wv *Webview) error {
+func (a HoverAction) Execute(ctx context.Context, wv *Webview) error /* core.Result boundary */ {
 	elem, err := wv.querySelector(ctx, a.Selector)
 	if err != nil {
 		return err
@@ -211,7 +211,7 @@ type DoubleClickAction struct {
 }
 
 // Execute double-clicks the element.
-func (a DoubleClickAction) Execute(ctx context.Context, wv *Webview) error {
+func (a DoubleClickAction) Execute(ctx context.Context, wv *Webview) error /* core.Result boundary */ {
 	elem, err := wv.querySelector(ctx, a.Selector)
 	if err != nil {
 		return err
@@ -258,7 +258,7 @@ type RightClickAction struct {
 }
 
 // Execute right-clicks the element.
-func (a RightClickAction) Execute(ctx context.Context, wv *Webview) error {
+func (a RightClickAction) Execute(ctx context.Context, wv *Webview) error /* core.Result boundary */ {
 	elem, err := wv.querySelector(ctx, a.Selector)
 	if err != nil {
 		return err
@@ -302,7 +302,7 @@ type PressKeyAction struct {
 }
 
 // Execute presses the key.
-func (a PressKeyAction) Execute(ctx context.Context, wv *Webview) error {
+func (a PressKeyAction) Execute(ctx context.Context, wv *Webview) error /* core.Result boundary */ {
 	// Map common key names to CDP key codes
 	keyMap := map[string]struct {
 		code       string
@@ -373,7 +373,7 @@ type SetAttributeAction struct {
 }
 
 // Execute sets the attribute.
-func (a SetAttributeAction) Execute(ctx context.Context, wv *Webview) error {
+func (a SetAttributeAction) Execute(ctx context.Context, wv *Webview) error /* core.Result boundary */ {
 	script := core.Sprintf("document.querySelector(%q)?.setAttribute(%q, %q)", a.Selector, a.Attribute, a.Value)
 	_, err := wv.evaluate(ctx, script)
 	return err
@@ -386,7 +386,7 @@ type RemoveAttributeAction struct {
 }
 
 // Execute removes the attribute.
-func (a RemoveAttributeAction) Execute(ctx context.Context, wv *Webview) error {
+func (a RemoveAttributeAction) Execute(ctx context.Context, wv *Webview) error /* core.Result boundary */ {
 	script := core.Sprintf("document.querySelector(%q)?.removeAttribute(%q)", a.Selector, a.Attribute)
 	_, err := wv.evaluate(ctx, script)
 	return err
@@ -399,7 +399,7 @@ type SetValueAction struct {
 }
 
 // Execute sets the value.
-func (a SetValueAction) Execute(ctx context.Context, wv *Webview) error {
+func (a SetValueAction) Execute(ctx context.Context, wv *Webview) error /* core.Result boundary */ {
 	script := core.Sprintf(`
 		const el = document.querySelector(%q);
 		if (el) {
@@ -419,7 +419,7 @@ type UploadFileAction struct {
 }
 
 // Execute uploads files into the matching file input.
-func (a UploadFileAction) Execute(ctx context.Context, wv *Webview) error {
+func (a UploadFileAction) Execute(ctx context.Context, wv *Webview) error /* core.Result boundary */ {
 	if wv == nil {
 		return coreerr.E("UploadFileAction.Execute", "webview is required", nil)
 	}
@@ -433,7 +433,7 @@ type DragAndDropAction struct {
 }
 
 // Execute drags the source element onto the target element.
-func (a DragAndDropAction) Execute(ctx context.Context, wv *Webview) error {
+func (a DragAndDropAction) Execute(ctx context.Context, wv *Webview) error /* core.Result boundary */ {
 	if wv == nil {
 		return coreerr.E("DragAndDropAction.Execute", "webview is required", nil)
 	}
@@ -575,7 +575,7 @@ func (s *ActionSequence) DragAndDrop(sourceSelector, targetSelector string) *Act
 }
 
 // Execute executes all actions in the sequence.
-func (s *ActionSequence) Execute(ctx context.Context, wv *Webview) error {
+func (s *ActionSequence) Execute(ctx context.Context, wv *Webview) error /* core.Result boundary */ {
 	for i, action := range s.actions {
 		if err := action.Execute(ctx, wv); err != nil {
 			return coreerr.E("ActionSequence.Execute", core.Sprintf("action index %d failed", i), err)
@@ -585,14 +585,14 @@ func (s *ActionSequence) Execute(ctx context.Context, wv *Webview) error {
 }
 
 // UploadFile uploads a file to a file input element.
-func (wv *Webview) UploadFile(selector string, filePaths []string) error {
+func (wv *Webview) UploadFile(selector string, filePaths []string) error /* core.Result boundary */ {
 	ctx, cancel := context.WithTimeout(wv.ctx, wv.timeout)
 	defer cancel()
 
 	return wv.uploadFile(ctx, selector, filePaths)
 }
 
-func (wv *Webview) uploadFile(ctx context.Context, selector string, filePaths []string) error {
+func (wv *Webview) uploadFile(ctx context.Context, selector string, filePaths []string) error /* core.Result boundary */ {
 	// Get the element's node ID
 	elem, err := wv.querySelector(ctx, selector)
 	if err != nil {
@@ -611,14 +611,14 @@ func (wv *Webview) uploadFile(ctx context.Context, selector string, filePaths []
 }
 
 // DragAndDrop performs a drag and drop operation.
-func (wv *Webview) DragAndDrop(sourceSelector, targetSelector string) error {
+func (wv *Webview) DragAndDrop(sourceSelector, targetSelector string) error /* core.Result boundary */ {
 	ctx, cancel := context.WithTimeout(wv.ctx, wv.timeout)
 	defer cancel()
 
 	return wv.dragAndDrop(ctx, sourceSelector, targetSelector)
 }
 
-func (wv *Webview) dragAndDrop(ctx context.Context, sourceSelector, targetSelector string) error {
+func (wv *Webview) dragAndDrop(ctx context.Context, sourceSelector, targetSelector string) error /* core.Result boundary */ {
 	// Get source and target elements
 	source, err := wv.querySelector(ctx, sourceSelector)
 	if err != nil {

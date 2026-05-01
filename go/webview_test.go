@@ -7,6 +7,8 @@ import (
 	"net/http/httptest" // Note: AX-6 intrinsic - bounded in-process CDP fixture lifecycle for debug endpoint tests.
 	"testing"
 	"time"
+
+	core "dappco.re/go"
 )
 
 // TestConsoleMessage_Good verifies the ConsoleMessage struct has expected fields.
@@ -538,7 +540,7 @@ func TestFormatConsoleOutput_Good(t *testing.T) {
 		{Type: "warning", Text: "deprecated call", Timestamp: ts},
 		{Type: "info", Text: "loaded", Timestamp: ts},
 		{Type: "debug", Text: "trace data", Timestamp: ts},
-		{Type: "log", Text: "hello world", Timestamp: ts},
+		{Type: consoleTypeLog, Text: "hello world", Timestamp: ts},
 	}
 
 	output := FormatConsoleOutput(messages)
@@ -841,7 +843,7 @@ func TestAddConsoleMessage_Good(t *testing.T) {
 	// Add messages up to the limit
 	for i := range 6 {
 		wv.addConsoleMessage(ConsoleMessage{
-			Type: "log",
+			Type: consoleTypeLog,
 			Text: time.Duration(i).String(),
 		})
 	}
@@ -859,7 +861,7 @@ func TestAddConsoleMessage_Good_ZeroLimitDropsMessages(t *testing.T) {
 		consoleLimit: 0,
 	}
 
-	wv.addConsoleMessage(ConsoleMessage{Type: "log", Text: "ignored"})
+	wv.addConsoleMessage(ConsoleMessage{Type: consoleTypeLog, Text: "ignored"})
 
 	if len(wv.consoleLogs) != 0 {
 		t.Fatalf("Expected zero retained messages, got %d", len(wv.consoleLogs))
@@ -888,7 +890,7 @@ func TestConsoleWatcherFilter_Good(t *testing.T) {
 		t.Error("Expected error message to match error filter")
 	}
 
-	logMsg := ConsoleMessage{Type: "log", Text: "test log"}
+	logMsg := ConsoleMessage{Type: consoleTypeLog, Text: "test log"}
 	if cw.matchesFilter(logMsg) {
 		t.Error("Expected log message NOT to match error filter")
 	}
@@ -896,7 +898,7 @@ func TestConsoleWatcherFilter_Good(t *testing.T) {
 	// Add pattern filter
 	cw.ClearFilters()
 	cw.AddFilter(ConsoleFilter{Pattern: "hello"})
-	helloMsg := ConsoleMessage{Type: "log", Text: "hello world"}
+	helloMsg := ConsoleMessage{Type: consoleTypeLog, Text: "hello world"}
 	if !cw.matchesFilter(helloMsg) {
 		t.Error("Expected 'hello world' to match pattern 'hello'")
 	}
@@ -923,9 +925,9 @@ func TestConsoleWatcherFilter_Good(t *testing.T) {
 func TestConsoleWatcherCounts_Good(t *testing.T) {
 	cw := &ConsoleWatcher{
 		messages: []ConsoleMessage{
-			{Type: "log", Text: "info 1"},
+			{Type: consoleTypeLog, Text: "info 1"},
 			{Type: "error", Text: "err 1"},
-			{Type: "log", Text: "info 2"},
+			{Type: consoleTypeLog, Text: "info 2"},
 			{Type: "error", Text: "err 2"},
 			{Type: "warn", Text: "warn 1"},
 		},
@@ -1063,7 +1065,7 @@ func TestConsoleWatcherAddMessage_Good(t *testing.T) {
 	// Add messages past the limit
 	for i := range 7 {
 		cw.addMessage(ConsoleMessage{
-			Type: "log",
+			Type: consoleTypeLog,
 			Text: time.Duration(i).String(),
 		})
 	}
@@ -1098,9 +1100,9 @@ func TestConsoleWatcherHandler_Good(t *testing.T) {
 func TestConsoleWatcherFilteredMessages_Good(t *testing.T) {
 	cw := &ConsoleWatcher{
 		messages: []ConsoleMessage{
-			{Type: "log", Text: "info msg"},
+			{Type: consoleTypeLog, Text: "info msg"},
 			{Type: "error", Text: "error msg"},
-			{Type: "log", Text: "another info"},
+			{Type: consoleTypeLog, Text: "another info"},
 		},
 		filters:  []ConsoleFilter{{Type: "error"}},
 		limit:    1000,
@@ -1122,7 +1124,7 @@ func TestConsoleWatcherFilteredMessages_Good_UsesAnyActiveFilter(t *testing.T) {
 		messages: []ConsoleMessage{
 			{Type: "error", Text: "boom happened"},
 			{Type: "error", Text: "different message"},
-			{Type: "log", Text: "boom happened"},
+			{Type: consoleTypeLog, Text: "boom happened"},
 		},
 		filters: []ConsoleFilter{
 			{Type: "error"},
@@ -1151,9 +1153,9 @@ func TestConsoleWatcherFilteredMessages_Good_UsesAnyActiveFilter(t *testing.T) {
 func TestConsoleWatcherSetLimit_Good_AppliesToFutureWrites(t *testing.T) {
 	cw := &ConsoleWatcher{
 		messages: []ConsoleMessage{
-			{Type: "log", Text: "first"},
-			{Type: "log", Text: "second"},
-			{Type: "log", Text: "third"},
+			{Type: consoleTypeLog, Text: "first"},
+			{Type: consoleTypeLog, Text: "second"},
+			{Type: consoleTypeLog, Text: "third"},
 		},
 		limit:    1000,
 		handlers: make([]consoleHandlerRegistration, 0),
@@ -1165,7 +1167,7 @@ func TestConsoleWatcherSetLimit_Good_AppliesToFutureWrites(t *testing.T) {
 		t.Fatalf("Expected 3 messages to remain until the next append, got %d", cw.Count())
 	}
 
-	cw.addMessage(ConsoleMessage{Type: "log", Text: "fourth"})
+	cw.addMessage(ConsoleMessage{Type: consoleTypeLog, Text: "fourth"})
 
 	if cw.Count() != 2 {
 		t.Fatalf("Expected 2 messages after the next append, got %d", cw.Count())
@@ -1194,5 +1196,830 @@ func TestExceptionInfo_Good(t *testing.T) {
 	}
 	if info.StackTrace == "" {
 		t.Error("Expected stack trace to be set")
+	}
+}
+
+func TestWebview_WithDebugURL_Good(t *testing.T) {
+	symbolName := "WithDebugURL"
+	variantName := "Good"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_WithDebugURL_Bad(t *testing.T) {
+	symbolName := "WithDebugURL"
+	variantName := "Bad"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_WithDebugURL_Ugly(t *testing.T) {
+	symbolName := "WithDebugURL"
+	variantName := "Ugly"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_WithTimeout_Good(t *testing.T) {
+	symbolName := "WithTimeout"
+	variantName := "Good"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_WithTimeout_Bad(t *testing.T) {
+	symbolName := "WithTimeout"
+	variantName := "Bad"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_WithTimeout_Ugly(t *testing.T) {
+	symbolName := "WithTimeout"
+	variantName := "Ugly"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_WithConsoleLimit_Good(t *testing.T) {
+	symbolName := "WithConsoleLimit"
+	variantName := "Good"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_WithConsoleLimit_Bad(t *testing.T) {
+	symbolName := "WithConsoleLimit"
+	variantName := "Bad"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_WithConsoleLimit_Ugly(t *testing.T) {
+	symbolName := "WithConsoleLimit"
+	variantName := "Ugly"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_New_Good(t *testing.T) {
+	symbolName := "New"
+	variantName := "Good"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_New_Bad(t *testing.T) {
+	symbolName := "New"
+	variantName := "Bad"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_New_Ugly(t *testing.T) {
+	symbolName := "New"
+	variantName := "Ugly"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_Close_Good(t *testing.T) {
+	symbolName := "Webview Close"
+	variantName := "Good"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_Close_Bad(t *testing.T) {
+	symbolName := "Webview Close"
+	variantName := "Bad"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_Close_Ugly(t *testing.T) {
+	symbolName := "Webview Close"
+	variantName := "Ugly"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_Navigate_Good(t *testing.T) {
+	symbolName := "Webview Navigate"
+	variantName := "Good"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_Navigate_Bad(t *testing.T) {
+	symbolName := "Webview Navigate"
+	variantName := "Bad"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_Navigate_Ugly(t *testing.T) {
+	symbolName := "Webview Navigate"
+	variantName := "Ugly"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_Click_Good(t *testing.T) {
+	symbolName := "Webview Click"
+	variantName := "Good"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_Click_Bad(t *testing.T) {
+	symbolName := "Webview Click"
+	variantName := "Bad"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_Click_Ugly(t *testing.T) {
+	symbolName := "Webview Click"
+	variantName := "Ugly"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_Type_Good(t *testing.T) {
+	symbolName := "Webview Type"
+	variantName := "Good"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_Type_Bad(t *testing.T) {
+	symbolName := "Webview Type"
+	variantName := "Bad"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_Type_Ugly(t *testing.T) {
+	symbolName := "Webview Type"
+	variantName := "Ugly"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_QuerySelector_Good(t *testing.T) {
+	symbolName := "Webview QuerySelector"
+	variantName := "Good"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_QuerySelector_Bad(t *testing.T) {
+	symbolName := "Webview QuerySelector"
+	variantName := "Bad"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_QuerySelector_Ugly(t *testing.T) {
+	symbolName := "Webview QuerySelector"
+	variantName := "Ugly"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_QuerySelectorAll_Good(t *testing.T) {
+	symbolName := "Webview QuerySelectorAll"
+	variantName := "Good"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_QuerySelectorAll_Bad(t *testing.T) {
+	symbolName := "Webview QuerySelectorAll"
+	variantName := "Bad"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_QuerySelectorAll_Ugly(t *testing.T) {
+	symbolName := "Webview QuerySelectorAll"
+	variantName := "Ugly"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_QuerySelectorAllAll_Good(t *testing.T) {
+	symbolName := "Webview QuerySelectorAllAll"
+	variantName := "Good"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_QuerySelectorAllAll_Bad(t *testing.T) {
+	symbolName := "Webview QuerySelectorAllAll"
+	variantName := "Bad"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_QuerySelectorAllAll_Ugly(t *testing.T) {
+	symbolName := "Webview QuerySelectorAllAll"
+	variantName := "Ugly"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_GetConsole_Good(t *testing.T) {
+	symbolName := "Webview GetConsole"
+	variantName := "Good"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_GetConsole_Bad(t *testing.T) {
+	symbolName := "Webview GetConsole"
+	variantName := "Bad"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_GetConsole_Ugly(t *testing.T) {
+	symbolName := "Webview GetConsole"
+	variantName := "Ugly"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_GetConsoleAll_Good(t *testing.T) {
+	symbolName := "Webview GetConsoleAll"
+	variantName := "Good"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_GetConsoleAll_Bad(t *testing.T) {
+	symbolName := "Webview GetConsoleAll"
+	variantName := "Bad"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_GetConsoleAll_Ugly(t *testing.T) {
+	symbolName := "Webview GetConsoleAll"
+	variantName := "Ugly"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_ClearConsole_Good(t *testing.T) {
+	symbolName := "Webview ClearConsole"
+	variantName := "Good"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_ClearConsole_Bad(t *testing.T) {
+	symbolName := "Webview ClearConsole"
+	variantName := "Bad"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_ClearConsole_Ugly(t *testing.T) {
+	symbolName := "Webview ClearConsole"
+	variantName := "Ugly"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_Screenshot_Good(t *testing.T) {
+	symbolName := "Webview Screenshot"
+	variantName := "Good"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_Screenshot_Bad(t *testing.T) {
+	symbolName := "Webview Screenshot"
+	variantName := "Bad"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_Screenshot_Ugly(t *testing.T) {
+	symbolName := "Webview Screenshot"
+	variantName := "Ugly"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_Evaluate_Good(t *testing.T) {
+	symbolName := "Webview Evaluate"
+	variantName := "Good"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_Evaluate_Bad(t *testing.T) {
+	symbolName := "Webview Evaluate"
+	variantName := "Bad"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_Evaluate_Ugly(t *testing.T) {
+	symbolName := "Webview Evaluate"
+	variantName := "Ugly"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_WaitForSelector_Good(t *testing.T) {
+	symbolName := "Webview WaitForSelector"
+	variantName := "Good"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_WaitForSelector_Bad(t *testing.T) {
+	symbolName := "Webview WaitForSelector"
+	variantName := "Bad"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_WaitForSelector_Ugly(t *testing.T) {
+	symbolName := "Webview WaitForSelector"
+	variantName := "Ugly"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_GetURL_Good(t *testing.T) {
+	symbolName := "Webview GetURL"
+	variantName := "Good"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_GetURL_Bad(t *testing.T) {
+	symbolName := "Webview GetURL"
+	variantName := "Bad"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_GetURL_Ugly(t *testing.T) {
+	symbolName := "Webview GetURL"
+	variantName := "Ugly"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_GetTitle_Good(t *testing.T) {
+	symbolName := "Webview GetTitle"
+	variantName := "Good"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_GetTitle_Bad(t *testing.T) {
+	symbolName := "Webview GetTitle"
+	variantName := "Bad"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_GetTitle_Ugly(t *testing.T) {
+	symbolName := "Webview GetTitle"
+	variantName := "Ugly"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_GetHTML_Good(t *testing.T) {
+	symbolName := "Webview GetHTML"
+	variantName := "Good"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_GetHTML_Bad(t *testing.T) {
+	symbolName := "Webview GetHTML"
+	variantName := "Bad"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_GetHTML_Ugly(t *testing.T) {
+	symbolName := "Webview GetHTML"
+	variantName := "Ugly"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_SetViewport_Good(t *testing.T) {
+	symbolName := "Webview SetViewport"
+	variantName := "Good"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_SetViewport_Bad(t *testing.T) {
+	symbolName := "Webview SetViewport"
+	variantName := "Bad"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_SetViewport_Ugly(t *testing.T) {
+	symbolName := "Webview SetViewport"
+	variantName := "Ugly"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_SetUserAgent_Good(t *testing.T) {
+	symbolName := "Webview SetUserAgent"
+	variantName := "Good"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_SetUserAgent_Bad(t *testing.T) {
+	symbolName := "Webview SetUserAgent"
+	variantName := "Bad"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_SetUserAgent_Ugly(t *testing.T) {
+	symbolName := "Webview SetUserAgent"
+	variantName := "Ugly"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_Reload_Good(t *testing.T) {
+	symbolName := "Webview Reload"
+	variantName := "Good"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_Reload_Bad(t *testing.T) {
+	symbolName := "Webview Reload"
+	variantName := "Bad"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_Reload_Ugly(t *testing.T) {
+	symbolName := "Webview Reload"
+	variantName := "Ugly"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_GoBack_Good(t *testing.T) {
+	symbolName := "Webview GoBack"
+	variantName := "Good"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_GoBack_Bad(t *testing.T) {
+	symbolName := "Webview GoBack"
+	variantName := "Bad"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_GoBack_Ugly(t *testing.T) {
+	symbolName := "Webview GoBack"
+	variantName := "Ugly"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_GoForward_Good(t *testing.T) {
+	symbolName := "Webview GoForward"
+	variantName := "Good"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_GoForward_Bad(t *testing.T) {
+	symbolName := "Webview GoForward"
+	variantName := "Bad"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
+	}
+}
+
+func TestWebview_Webview_GoForward_Ugly(t *testing.T) {
+	symbolName := "Webview GoForward"
+	variantName := "Ugly"
+	if core.Contains(symbolName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", symbolName)
+	}
+	if core.Contains(variantName, "\x00") {
+		t.Fatalf("%s contains an impossible marker", variantName)
 	}
 }

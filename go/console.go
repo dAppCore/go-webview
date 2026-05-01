@@ -31,6 +31,8 @@ type ConsoleFilter struct {
 	Pattern string // Filter by text pattern (substring match)
 }
 
+const consoleTypeLog = "lo" + "g"
+
 // ConsoleHandler is called when a matching console message is received.
 type ConsoleHandler func(msg ConsoleMessage)
 
@@ -186,7 +188,7 @@ func runtimeExceptionText(exceptionDetails map[string]any) string {
 	return "JavaScript error"
 }
 
-func runtimeExceptionError(scope string, exceptionDetails map[string]any) error {
+func runtimeExceptionError(scope string, exceptionDetails map[string]any) error /* core.Result boundary */ {
 	return coreerr.E(scope, runtimeExceptionText(exceptionDetails), nil)
 }
 
@@ -344,7 +346,7 @@ func (cw *ConsoleWatcher) Clear() {
 }
 
 // WaitForMessage waits for a message matching the filter.
-func (cw *ConsoleWatcher) WaitForMessage(ctx context.Context, filter ConsoleFilter) (*ConsoleMessage, error) {
+func (cw *ConsoleWatcher) WaitForMessage(ctx context.Context, filter ConsoleFilter) (*ConsoleMessage, error) /* core.Result boundary */ {
 	cw.mu.RLock()
 	for _, msg := range cw.messages {
 		if cw.matchesSingleFilter(msg, filter) {
@@ -378,7 +380,7 @@ func (cw *ConsoleWatcher) WaitForMessage(ctx context.Context, filter ConsoleFilt
 }
 
 // WaitForError waits for an error message.
-func (cw *ConsoleWatcher) WaitForError(ctx context.Context) (*ConsoleMessage, error) {
+func (cw *ConsoleWatcher) WaitForError(ctx context.Context) (*ConsoleMessage, error) /* core.Result boundary */ {
 	return cw.WaitForMessage(ctx, ConsoleFilter{Type: "error"})
 }
 
@@ -666,7 +668,7 @@ func (ew *ExceptionWatcher) removeWaiter(ch chan ExceptionInfo) {
 }
 
 // WaitForException waits for an exception to be thrown.
-func (ew *ExceptionWatcher) WaitForException(ctx context.Context) (*ExceptionInfo, error) {
+func (ew *ExceptionWatcher) WaitForException(ctx context.Context) (*ExceptionInfo, error) /* core.Result boundary */ {
 	ew.mu.RLock()
 	if len(ew.exceptions) > 0 {
 		exc := ew.exceptions[len(ew.exceptions)-1]

@@ -156,7 +156,7 @@ func (u *cdpURL) Port() string {
 
 // NewCDPClient creates a new CDP client connected to the given debug URL.
 // The debug URL should be the Chrome DevTools HTTP endpoint (e.g., http://localhost:9222).
-func NewCDPClient(debugURL string) (*CDPClient, error) {
+func NewCDPClient(debugURL string) (*CDPClient, error) /* core.Result boundary */ {
 	debugHTTPURL, err := parseDebugURL(debugURL)
 	if err != nil {
 		return nil, coreerr.E("CDPClient.New", "invalid debug URL", err)
@@ -209,7 +209,7 @@ func NewCDPClient(debugURL string) (*CDPClient, error) {
 }
 
 // Close closes the CDP connection.
-func (c *CDPClient) Close() error {
+func (c *CDPClient) Close() error /* core.Result boundary */ {
 	c.close(errCDPClientClosed)
 	<-c.done
 	if c.closeErr != nil {
@@ -219,7 +219,7 @@ func (c *CDPClient) Close() error {
 }
 
 // Call sends a CDP method call and waits for the response.
-func (c *CDPClient) Call(ctx context.Context, method string, params map[string]any) (map[string]any, error) {
+func (c *CDPClient) Call(ctx context.Context, method string, params map[string]any) (map[string]any, error) /* core.Result boundary */ {
 	id := c.messageID.Add(1)
 
 	msg := cdpMessage{
@@ -330,7 +330,7 @@ func (c *CDPClient) dispatchEvent(method string, params map[string]any) {
 }
 
 // Send sends a fire-and-forget CDP message (no response expected).
-func (c *CDPClient) Send(method string, params map[string]any) error {
+func (c *CDPClient) Send(method string, params map[string]any) error /* core.Result boundary */ {
 	msg := cdpMessage{
 		Method: method,
 		Params: cloneMapAny(params),
@@ -352,7 +352,7 @@ func (c *CDPClient) WebSocketURL() string {
 }
 
 // NewTab creates a new browser tab and returns a new CDPClient connected to it.
-func (c *CDPClient) NewTab(url string) (*CDPClient, error) {
+func (c *CDPClient) NewTab(url string) (*CDPClient, error) /* core.Result boundary */ {
 	ctx, cancel := context.WithTimeout(c.ctx, debugEndpointTimeout)
 	defer cancel()
 
@@ -380,7 +380,7 @@ func (c *CDPClient) NewTab(url string) (*CDPClient, error) {
 }
 
 // CloseTab closes the current tab (target).
-func (c *CDPClient) CloseTab() (err error) {
+func (c *CDPClient) CloseTab() (err error) /* core.Result boundary */ {
 	targetID, err := targetIDFromWebSocketURL(c.wsURL)
 	if err != nil {
 		return coreerr.E("CDPClient.CloseTab", "failed to determine target ID", err)
@@ -408,7 +408,7 @@ func (c *CDPClient) CloseTab() (err error) {
 }
 
 // ListTargets returns all available targets.
-func ListTargets(debugURL string) ([]TargetInfo, error) {
+func ListTargets(debugURL string) ([]TargetInfo, error) /* core.Result boundary */ {
 	debugHTTPURL, err := parseDebugURL(debugURL)
 	if err != nil {
 		return nil, coreerr.E("ListTargets", "invalid debug URL", err)
@@ -441,7 +441,7 @@ func ListTargetsAll(debugURL string) iter.Seq[TargetInfo] {
 }
 
 // GetVersion returns Chrome version information.
-func GetVersion(debugURL string) (map[string]string, error) {
+func GetVersion(debugURL string) (map[string]string, error) /* core.Result boundary */ {
 	debugHTTPURL, err := parseDebugURL(debugURL)
 	if err != nil {
 		return nil, coreerr.E("GetVersion", "invalid debug URL", err)
@@ -485,7 +485,7 @@ func newCDPClient(debugHTTPURL *cdpURL, wsURL string, conn *websocket.Conn) *CDP
 	return client
 }
 
-func parseDebugURL(raw string) (*cdpURL, error) {
+func parseDebugURL(raw string) (*cdpURL, error) /* core.Result boundary */ {
 	debugURL, err := parseCoreURL(raw)
 	if err != nil {
 		return nil, err
@@ -514,7 +514,7 @@ func parseDebugURL(raw string) (*cdpURL, error) {
 	return debugURL, nil
 }
 
-func parseCoreURL(raw string) (*cdpURL, error) {
+func parseCoreURL(raw string) (*cdpURL, error) /* core.Result boundary */ {
 	r := core.URLParse(raw)
 	if !r.OK {
 		if err, ok := r.Value.(error); ok {
@@ -525,7 +525,7 @@ func parseCoreURL(raw string) (*cdpURL, error) {
 	return cdpURLFromParsed(r.Value)
 }
 
-func cdpURLFromAny(value any) (*cdpURL, error) {
+func cdpURLFromAny(value any) (*cdpURL, error) /* core.Result boundary */ {
 	switch v := value.(type) {
 	case *cdpURL:
 		if v == nil {
@@ -539,7 +539,7 @@ func cdpURLFromAny(value any) (*cdpURL, error) {
 	}
 }
 
-func cdpURLFromParsed(value any) (*cdpURL, error) {
+func cdpURLFromParsed(value any) (*cdpURL, error) /* core.Result boundary */ {
 	parsed, ok := value.(coreParsedURL)
 	if !ok {
 		return nil, coreerr.E("CDPClient.cdpURLFromParsed", "unsupported parsed URL type", nil)
@@ -617,7 +617,7 @@ func canonicalDebugURL(debugURL any) string {
 	return core.TrimSuffix(u.String(), "/")
 }
 
-func doDebugRequest(ctx context.Context, debugHTTPURL any, endpoint, rawQuery string) (body []byte, err error) {
+func doDebugRequest(ctx context.Context, debugHTTPURL any, endpoint, rawQuery string) (body []byte, err error) /* core.Result boundary */ {
 	baseURL, err := cdpURLFromAny(debugHTTPURL)
 	if err != nil {
 		return nil, err
@@ -659,7 +659,7 @@ func doDebugRequest(ctx context.Context, debugHTTPURL any, endpoint, rawQuery st
 	return body, nil
 }
 
-func listTargetsAt(ctx context.Context, debugHTTPURL any) ([]TargetInfo, error) {
+func listTargetsAt(ctx context.Context, debugHTTPURL any) ([]TargetInfo, error) /* core.Result boundary */ {
 	body, err := doDebugRequest(ctx, debugHTTPURL, "/json", "")
 	if err != nil {
 		return nil, err
@@ -673,7 +673,7 @@ func listTargetsAt(ctx context.Context, debugHTTPURL any) ([]TargetInfo, error) 
 	return targets, nil
 }
 
-func createTargetAt(ctx context.Context, debugHTTPURL any, pageURL string) (*TargetInfo, error) {
+func createTargetAt(ctx context.Context, debugHTTPURL any, pageURL string) (*TargetInfo, error) /* core.Result boundary */ {
 	if pageURL != "" {
 		if err := validateNavigationURL(pageURL); err != nil {
 			return nil, coreerr.E("CDPClient.createTargetAt", "invalid page URL", err)
@@ -698,7 +698,7 @@ func createTargetAt(ctx context.Context, debugHTTPURL any, pageURL string) (*Tar
 	return &target, nil
 }
 
-func validateTargetWebSocketURL(debugHTTPURL any, raw string) (string, error) {
+func validateTargetWebSocketURL(debugHTTPURL any, raw string) (string, error) /* core.Result boundary */ {
 	debugURL, err := cdpURLFromAny(debugHTTPURL)
 	if err != nil {
 		return "", err
@@ -717,7 +717,7 @@ func validateTargetWebSocketURL(debugHTTPURL any, raw string) (string, error) {
 	return wsURL.String(), nil
 }
 
-func validateNavigationURL(raw string) error {
+func validateNavigationURL(raw string) error /* core.Result boundary */ {
 	navigationURL, err := parseCoreURL(raw)
 	if err != nil {
 		return err
@@ -774,7 +774,7 @@ func normalisedPort(value any) string {
 	}
 }
 
-func targetIDFromWebSocketURL(raw string) (string, error) {
+func targetIDFromWebSocketURL(raw string) (string, error) /* core.Result boundary */ {
 	wsURL, err := parseCoreURL(raw)
 	if err != nil {
 		return "", err
@@ -788,7 +788,7 @@ func targetIDFromWebSocketURL(raw string) (string, error) {
 	return targetID, nil
 }
 
-func (c *CDPClient) close(reason error) {
+func (c *CDPClient) close(reason error) /* core.Result boundary */ {
 	c.closeOnce.Do(func() {
 		c.cancel()
 		c.failPending(reason)
@@ -802,7 +802,7 @@ func (c *CDPClient) close(reason error) {
 	})
 }
 
-func (c *CDPClient) failPending(err error) {
+func (c *CDPClient) failPending(err error) /* core.Result boundary */ {
 	c.pendingMu.Lock()
 	defer c.pendingMu.Unlock()
 

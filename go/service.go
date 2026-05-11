@@ -82,25 +82,22 @@ func NewService(opts ServiceOptions) func(*core.Core) core.Result {
 		if opts.ConsoleLimit > 0 {
 			webviewOpts = append(webviewOpts, WithConsoleLimit(opts.ConsoleLimit))
 		}
-		wv, err := New(webviewOpts...)
-		if err != nil {
-			return core.Fail(core.E("webview.NewService", "webview construction failed", err))
+		r := New(webviewOpts...)
+		if !r.OK {
+			return r
 		}
-		svc.Webview = wv
+		svc.Webview = r.Value.(*Webview)
 		return core.Ok(svc)
 	}
 }
 
-// Register wires the webview service into the Core with empty
-// ServiceOptions — the imperative-style alternative to NewService.
-// The resulting *Service holds a nil Webview, so consumers must wire
-// one via webview.New(...) and assign to svc.Webview before use.
+// Register registers a *Service with a nil Webview — late-wire after.
 //
-//	c := core.New()
-//	if r := webview.Register(c); !r.OK { return r }
+//	c := core.New(core.WithService(webview.Register))
 //	svc := core.MustServiceFor[*webview.Service](c, "webview")
-//	wv, _ := webview.New(webview.WithDebugURL("http://localhost:9222"))
-//	svc.Webview = wv
+//	r := webview.New(webview.WithDebugURL("http://localhost:9222"))
+//	if !r.OK { return r }
+//	svc.Webview = r.Value.(*Webview)
 func Register(c *core.Core) core.Result {
 	return NewService(ServiceOptions{})(c)
 }

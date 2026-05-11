@@ -308,10 +308,11 @@ func TestCDPClientClose_Good_UnblocksReadLoop(t *testing.T) {
 	server := newFakeCDPServer(t)
 	target := server.primaryTarget()
 
-	client, err := NewCDPClient(server.DebugURL())
-	if err != nil {
-		t.Fatalf("NewCDPClient returned error: %v", err)
+	r := NewCDPClient(server.DebugURL())
+	if !r.OK {
+		t.Fatalf("NewCDPClient returned error: %s", r.Error())
 	}
+	client := r.Value.(*CDPClient)
 
 	target.waitConnected(t)
 
@@ -337,10 +338,11 @@ func TestCDPClientReadLoop_Ugly_StopsOnTerminalReadError(t *testing.T) {
 		target.closeWebSocket()
 	}
 
-	client, err := NewCDPClient(server.DebugURL())
-	if err != nil {
-		t.Fatalf("NewCDPClient returned error: %v", err)
+	r := NewCDPClient(server.DebugURL())
+	if !r.OK {
+		t.Fatalf("NewCDPClient returned error: %s", r.Error())
 	}
+	client := r.Value.(*CDPClient)
 
 	select {
 	case <-client.done:
@@ -366,10 +368,11 @@ func TestCDPClientCloseTab_Good_ClosesTargetOnly(t *testing.T) {
 		}()
 	}
 
-	client, err := NewCDPClient(server.DebugURL())
-	if err != nil {
-		t.Fatalf("NewCDPClient returned error: %v", err)
+	r := NewCDPClient(server.DebugURL())
+	if !r.OK {
+		t.Fatalf("NewCDPClient returned error: %s", r.Error())
 	}
+	client := r.Value.(*CDPClient)
 
 	if err := client.CloseTab(); err != nil {
 		t.Fatalf("CloseTab returned error: %v", err)
@@ -454,12 +457,12 @@ func TestNewCDPClient_Bad_RejectsCrossHostWebSocket(t *testing.T) {
 	}))
 	defer server.Close()
 
-	_, err := NewCDPClient(server.URL)
-	if err == nil {
+	r := NewCDPClient(server.URL)
+	if r.OK {
 		t.Fatal("NewCDPClient succeeded with a cross-host WebSocket URL")
 	}
-	if !core.Contains(err.Error(), "invalid target WebSocket URL") {
-		t.Fatalf("NewCDPClient error = %v, want cross-host WebSocket validation failure", err)
+	if !core.Contains(r.Error(), "invalid target WebSocket URL") {
+		t.Fatalf("NewCDPClient error = %s, want cross-host WebSocket validation failure", r.Error())
 	}
 }
 
@@ -473,11 +476,11 @@ func TestWebviewNew_Bad_ClosesClientWhenEnableConsoleFails(t *testing.T) {
 		target.replyError(msg.ID, "runtime disabled")
 	}
 
-	_, err := New(
+	r := New(
 		WithTimeout(250*time.Millisecond),
 		WithDebugURL(server.DebugURL()),
 	)
-	if err == nil {
+	if r.OK {
 		t.Fatal("New succeeded when Runtime.enable failed")
 	}
 
@@ -494,10 +497,11 @@ func TestAngularHelperWaitForZoneStability_Good_AwaitsPromise(t *testing.T) {
 		target.replyValue(msg.ID, true)
 	}
 
-	client, err := NewCDPClient(server.DebugURL())
-	if err != nil {
-		t.Fatalf("NewCDPClient returned error: %v", err)
+	r := NewCDPClient(server.DebugURL())
+	if !r.OK {
+		t.Fatalf("NewCDPClient returned error: %s", r.Error())
 	}
+	client := r.Value.(*CDPClient)
 	defer func() { _ = client.Close() }()
 
 	wv := &Webview{
@@ -530,10 +534,11 @@ func TestAngularHelperSetNgModel_Good_EscapesSelectorAndValue(t *testing.T) {
 		target.replyValue(msg.ID, true)
 	}
 
-	client, err := NewCDPClient(server.DebugURL())
-	if err != nil {
-		t.Fatalf("NewCDPClient returned error: %v", err)
+	r := NewCDPClient(server.DebugURL())
+	if !r.OK {
+		t.Fatalf("NewCDPClient returned error: %s", r.Error())
 	}
+	client := r.Value.(*CDPClient)
 	defer func() { _ = client.Close() }()
 
 	wv := &Webview{
@@ -709,10 +714,11 @@ func TestWebviewGoBack_Good_UsesNavigationHistoryAndWaitsForLoad(t *testing.T) {
 		}
 	}
 
-	client, err := NewCDPClient(server.DebugURL())
-	if err != nil {
-		t.Fatalf("NewCDPClient returned error: %v", err)
+	r := NewCDPClient(server.DebugURL())
+	if !r.OK {
+		t.Fatalf("NewCDPClient returned error: %s", r.Error())
 	}
+	client := r.Value.(*CDPClient)
 	defer func() { _ = client.Close() }()
 
 	wv := &Webview{
@@ -759,10 +765,11 @@ func TestWebviewGoForward_Good_UsesNavigationHistoryAndWaitsForLoad(t *testing.T
 		}
 	}
 
-	client, err := NewCDPClient(server.DebugURL())
-	if err != nil {
-		t.Fatalf("NewCDPClient returned error: %v", err)
+	r := NewCDPClient(server.DebugURL())
+	if !r.OK {
+		t.Fatalf("NewCDPClient returned error: %s", r.Error())
 	}
+	client := r.Value.(*CDPClient)
 	defer func() { _ = client.Close() }()
 
 	wv := &Webview{
@@ -793,10 +800,11 @@ func TestWebviewEvaluate_Bad_UsesExceptionText(t *testing.T) {
 		})
 	}
 
-	client, err := NewCDPClient(server.DebugURL())
-	if err != nil {
-		t.Fatalf("NewCDPClient returned error: %v", err)
+	r := NewCDPClient(server.DebugURL())
+	if !r.OK {
+		t.Fatalf("NewCDPClient returned error: %s", r.Error())
 	}
+	client := r.Value.(*CDPClient)
 	defer func() { _ = client.Close() }()
 
 	wv := &Webview{
@@ -831,10 +839,11 @@ func TestAngularHelperGetRouterState_Good_KeepsOnlyStringParams(t *testing.T) {
 		})
 	}
 
-	client, err := NewCDPClient(server.DebugURL())
-	if err != nil {
-		t.Fatalf("NewCDPClient returned error: %v", err)
+	r := NewCDPClient(server.DebugURL())
+	if !r.OK {
+		t.Fatalf("NewCDPClient returned error: %s", r.Error())
 	}
+	client := r.Value.(*CDPClient)
 	defer func() { _ = client.Close() }()
 
 	wv := &Webview{

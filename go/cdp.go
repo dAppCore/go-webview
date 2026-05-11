@@ -155,11 +155,25 @@ func (u *cdpURL) Port() string {
 }
 
 // NewCDPClient creates a new CDP client connected to the given debug URL.
-// The debug URL should be the Chrome DevTools HTTP endpoint (e.g., http://localhost:9222).
-func NewCDPClient(debugURL string) (*CDPClient, error) /* core.Result boundary */ {
+// Panics in the constructor body recover as Result.Fail.
+//
+//	r := webview.NewCDPClient("http://localhost:9222")
+//	if !r.OK { return r }
+//	client := r.Value.(*CDPClient)
+func NewCDPClient(debugURL string) (r core.Result) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			if err, ok := rec.(error); ok {
+				r = core.Fail(err)
+				return
+			}
+			r = core.Fail(coreerr.E("CDPClient.New", "panic recovered", nil))
+		}
+	}()
+
 	debugHTTPURL, err := parseDebugURL(debugURL)
 	if err != nil {
-		return nil, coreerr.E("CDPClient.New", "invalid debug URL", err)
+		return core.Fail(coreerr.E("CDPClient.New", "invalid debug URL", err))
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), debugEndpointTimeout)
@@ -167,16 +181,15 @@ func NewCDPClient(debugURL string) (*CDPClient, error) /* core.Result boundary *
 
 	targets, err := listTargetsAt(ctx, debugHTTPURL)
 	if err != nil {
-		return nil, coreerr.E("CDPClient.New", "failed to get targets", err)
+		return core.Fail(coreerr.E("CDPClient.New", "failed to get targets", err))
 	}
 
-	// Find a page target
 	var wsURL string
 	for _, t := range targets {
 		if t.Type == "page" && t.WebSocketDebuggerURL != "" {
 			wsURL, err = validateTargetWebSocketURL(debugHTTPURL, t.WebSocketDebuggerURL)
 			if err != nil {
-				return nil, coreerr.E("CDPClient.New", "invalid target WebSocket URL", err)
+				return core.Fail(coreerr.E("CDPClient.New", "invalid target WebSocket URL", err))
 			}
 			break
 		}
@@ -185,27 +198,26 @@ func NewCDPClient(debugURL string) (*CDPClient, error) /* core.Result boundary *
 	if wsURL == "" {
 		newTarget, err := createTargetAt(ctx, debugHTTPURL, "")
 		if err != nil {
-			return nil, coreerr.E("CDPClient.New", "no page targets found and failed to create new", err)
+			return core.Fail(coreerr.E("CDPClient.New", "no page targets found and failed to create new", err))
 		}
 
 		wsURL, err = validateTargetWebSocketURL(debugHTTPURL, newTarget.WebSocketDebuggerURL)
 		if err != nil {
-			return nil, coreerr.E("CDPClient.New", "invalid new target WebSocket URL", err)
+			return core.Fail(coreerr.E("CDPClient.New", "invalid new target WebSocket URL", err))
 		}
 	}
 
 	if wsURL == "" {
-		return nil, coreerr.E("CDPClient.New", "no WebSocket URL available", nil)
+		return core.Fail(coreerr.E("CDPClient.New", "no WebSocket URL available", nil))
 	}
 
-	// Connect to WebSocket
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 	if err != nil {
-		return nil, coreerr.E("CDPClient.New", "failed to connect to WebSocket", err)
+		return core.Fail(coreerr.E("CDPClient.New", "failed to connect to WebSocket", err))
 	}
 	conn.SetReadLimit(maxCDPMessageBytes)
 
-	return newCDPClient(debugHTTPURL, wsURL, conn), nil
+	return core.Ok(newCDPClient(debugHTTPURL, wsURL, conn))
 }
 
 // Close closes the CDP connection.

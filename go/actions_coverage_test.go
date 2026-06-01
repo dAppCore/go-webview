@@ -144,3 +144,46 @@ func TestActionsCoverage_DragAndDropAction_Execute_Ugly(t *testing.T) {
 		t.Fatal("DragAndDropAction.Execute with no bounding box returned nil error")
 	}
 }
+
+func TestActionsCoverage_ActionSequence_UploadFile_Good(t *testing.T) {
+	seq := NewActionSequence().UploadFile("#file", []string{"/tmp/a.txt", "/tmp/b.txt"})
+
+	if len(seq.actions) != 1 {
+		t.Fatalf("sequence has %d actions, want 1", len(seq.actions))
+	}
+	action, ok := seq.actions[0].(UploadFileAction)
+	if !ok {
+		t.Fatalf("queued action is %T, want UploadFileAction", seq.actions[0])
+	}
+	if action.Selector != "#file" || len(action.FilePaths) != 2 {
+		t.Fatalf("queued UploadFileAction = %+v, want #file with 2 paths", action)
+	}
+}
+
+func TestActionsCoverage_ActionSequence_UploadFile_Ugly(t *testing.T) {
+	// The builder copies the supplied slice; mutating the caller's slice
+	// afterwards must not change the queued action.
+	paths := []string{"/tmp/a.txt"}
+	seq := NewActionSequence().UploadFile("#file", paths)
+	paths[0] = "/tmp/mutated.txt"
+
+	action := seq.actions[0].(UploadFileAction)
+	if action.FilePaths[0] != "/tmp/a.txt" {
+		t.Fatalf("queued path = %q, want /tmp/a.txt (builder must copy)", action.FilePaths[0])
+	}
+}
+
+func TestActionsCoverage_ActionSequence_DragAndDrop_Good(t *testing.T) {
+	seq := NewActionSequence().DragAndDrop("#source", "#target")
+
+	if len(seq.actions) != 1 {
+		t.Fatalf("sequence has %d actions, want 1", len(seq.actions))
+	}
+	action, ok := seq.actions[0].(DragAndDropAction)
+	if !ok {
+		t.Fatalf("queued action is %T, want DragAndDropAction", seq.actions[0])
+	}
+	if action.SourceSelector != "#source" || action.TargetSelector != "#target" {
+		t.Fatalf("queued DragAndDropAction = %+v, want #source/#target", action)
+	}
+}

@@ -265,16 +265,16 @@ func TestWithConsoleLimit_Bad_NegativeBecomesZero(t *testing.T) {
 
 // TestNew_Bad_NoDebugURL verifies New fails without a debug URL.
 func TestNew_Bad_NoDebugURL(t *testing.T) {
-	_, err := New()
-	if err == nil {
+	r := New()
+	if r.OK {
 		t.Error("Expected error when creating Webview without debug URL")
 	}
 }
 
 // TestNew_Bad_InvalidDebugURL verifies New fails with invalid debug URL.
 func TestNew_Bad_InvalidDebugURL(t *testing.T) {
-	_, err := New(WithDebugURL("http://localhost:99999"))
-	if err == nil {
+	r := New(WithDebugURL("http://localhost:99999"))
+	if r.OK {
 		t.Error("Expected error when connecting to invalid debug URL")
 	}
 }

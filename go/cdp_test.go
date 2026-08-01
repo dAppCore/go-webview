@@ -18,10 +18,11 @@ import (
 func newConnectedCDPClient(t *testing.T, target *fakeCDPTarget) *CDPClient {
 	t.Helper()
 
-	client, err := NewCDPClient(target.server.DebugURL())
-	if err != nil {
-		t.Fatalf("NewCDPClient returned error: %v", err)
+	r := NewCDPClient(target.server.DebugURL())
+	if !r.OK {
+		t.Fatalf("NewCDPClient returned error: %s", r.Error())
 	}
+	client := r.Value.(*CDPClient)
 	t.Cleanup(func() {
 		_ = client.Close()
 	})
@@ -278,10 +279,11 @@ func TestCdp_NewCDPClient_Good_AutoCreatesTarget(t *testing.T) {
 	server.nextTarget = 0
 	server.mu.Unlock()
 
-	client, err := NewCDPClient(server.DebugURL())
-	if err != nil {
-		t.Fatalf("NewCDPClient returned error: %v", err)
+	r := NewCDPClient(server.DebugURL())
+	if !r.OK {
+		t.Fatalf("NewCDPClient returned error: %s", r.Error())
 	}
+	client := r.Value.(*CDPClient)
 	t.Cleanup(func() {
 		_ = client.Close()
 	})
@@ -295,8 +297,8 @@ func TestCdp_NewCDPClient_Good_AutoCreatesTarget(t *testing.T) {
 }
 
 func TestCdp_NewCDPClient_Bad_RejectsInvalidDebugURL(t *testing.T) {
-	_, err := NewCDPClient("http://example.com:9222")
-	if err == nil {
+	r := NewCDPClient("http://example.com:9222")
+	if r.OK {
 		t.Fatal("NewCDPClient succeeded for remote host")
 	}
 }

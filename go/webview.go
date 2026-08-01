@@ -92,11 +92,12 @@ type Option func(*Webview) error
 //	webview.New(webview.WithDebugURL("http://localhost:9222"))
 func WithDebugURL(url string) Option {
 	return func(wv *Webview) error {
-		client, err := NewCDPClient(url)
-		if err != nil {
-			return coreerr.E("Webview.WithDebugURL", "failed to connect to Chrome DevTools", err)
+		r := NewCDPClient(url)
+		if !r.OK {
+			inner, _ := r.Value.(error)
+			return coreerr.E("Webview.WithDebugURL", "failed to connect to Chrome DevTools", inner)
 		}
-		wv.client = client
+		wv.client = r.Value.(*CDPClient)
 		return nil
 	}
 }
@@ -128,9 +129,22 @@ func WithConsoleLimit(limit int) Option {
 }
 
 // Create a Webview bound to an existing Chrome DevTools endpoint.
+// Panics in the constructor body recover as Result.Fail.
 //
-//	wv, err := webview.New(webview.WithDebugURL("http://localhost:9222"))
-func New(opts ...Option) (*Webview, error) /* core.Result boundary */ {
+//	r := webview.New(webview.WithDebugURL("http://localhost:9222"))
+//	if !r.OK { return r }
+//	wv := r.Value.(*Webview)
+func New(opts ...Option) (r core.Result) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			if err, ok := rec.(error); ok {
+				r = core.Fail(err)
+				return
+			}
+			r = core.Fail(coreerr.E("Webview.New", "panic recovered", nil))
+		}
+	}()
+
 	ctx, cancel := context.WithCancel(context.Background())
 
 	wv := &Webview{
@@ -152,26 +166,25 @@ func New(opts ...Option) (*Webview, error) /* core.Result boundary */ {
 	for _, opt := range opts {
 		if err := opt(wv); err != nil {
 			if cleanupErr := cleanupOnError(); cleanupErr != nil {
-				return nil, coreerr.E("Webview.New", "cleanup after option failure", coreerr.Join(err, cleanupErr))
+				return core.Fail(coreerr.E("Webview.New", "cleanup after option failure", coreerr.Join(err, cleanupErr)))
 			}
-			return nil, err
+			return core.Fail(err)
 		}
 	}
 
 	if wv.client == nil {
 		cancel()
-		return nil, coreerr.E("Webview.New", "no debug URL provided; use WithDebugURL option", nil)
+		return core.Fail(coreerr.E("Webview.New", "no debug URL provided; use WithDebugURL option", nil))
 	}
 
-	// Enable console capture
 	if err := wv.enableConsole(); err != nil {
 		if cleanupErr := cleanupOnError(); cleanupErr != nil {
-			return nil, coreerr.E("Webview.New", "cleanup after console setup failure", coreerr.Join(err, cleanupErr))
+			return core.Fail(coreerr.E("Webview.New", "cleanup after console setup failure", coreerr.Join(err, cleanupErr)))
 		}
-		return nil, coreerr.E("Webview.New", "failed to enable console capture", err)
+		return core.Fail(coreerr.E("Webview.New", "failed to enable console capture", err))
 	}
 
-	return wv, nil
+	return core.Ok(wv)
 }
 
 // Close closes the Webview connection.

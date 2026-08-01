@@ -59,10 +59,11 @@ func TestWebview_New_Good_EnablesConsoleCapture(t *testing.T) {
 		}
 	}
 
-	wv, err := New(WithDebugURL(server.DebugURL()))
-	if err != nil {
-		t.Fatalf("New returned error: %v", err)
+	r := New(WithDebugURL(server.DebugURL()))
+	if !r.OK {
+		t.Fatalf("New returned error: %s", r.Error())
 	}
+	wv := r.Value.(*Webview)
 	defer func() { _ = wv.Close() }()
 
 	target.writeJSON(cdpEvent{

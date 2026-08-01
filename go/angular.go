@@ -3,6 +3,7 @@ package webview
 
 import (
 	"context"
+	"maps"
 	"time"
 
 	core "dappco.re/go"
@@ -650,9 +651,7 @@ func copyStringOnlyMap(value any) map[string]string {
 		return result
 	case map[string]string:
 		result := make(map[string]string, len(typed))
-		for key, item := range typed {
-			result[key] = item
-		}
+		maps.Copy(result, typed)
 		return result
 	default:
 		return nil

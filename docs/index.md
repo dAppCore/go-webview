@@ -9,7 +9,7 @@ description: Chrome DevTools Protocol client for browser automation, testing, an
 
 The package does not launch Chrome itself. The caller is responsible for starting the browser process before constructing a `Webview`.
 
-**Module path:** `dappco.re/go/core/webview`
+**Module path:** `github.com/dappcore/go-webview/go`
 **Licence:** EUPL-1.2
 **Go version:** 1.26+
 **Dependencies:** `github.com/gorilla/websocket v1.5.3`
@@ -33,7 +33,7 @@ google-chrome --headless=new --remote-debugging-port=9222 --no-sandbox --disable
 Then use the package in Go:
 
 ```go
-import "dappco.re/go/core/webview"
+import "github.com/dappcore/go-webview/go"
 
 // Connect to Chrome
 wv, err := webview.New(webview.WithDebugURL("http://localhost:9222"))

@@ -5,7 +5,7 @@ import (
 	"context"
 	"testing"
 
-	core "dappco.re/go"
+	core "github.com/dappcore/go"
 )
 
 // TestAngularCoverage_waitForZoneStability_Good_PromiseResolvesStable

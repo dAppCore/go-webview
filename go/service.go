@@ -24,7 +24,7 @@ package webview
 import (
 	"time"
 
-	core "dappco.re/go"
+	core "github.com/dappcore/go"
 )
 
 // ServiceOptions configures the webview service. Empty values fall

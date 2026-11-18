@@ -5,7 +5,7 @@ package webview
 import (
 	"testing"
 
-	core "dappco.re/go"
+	core "github.com/dappcore/go"
 )
 
 // TestNewService_NoDebugURL_RegistersNilWebview — happy path lazy-injection.

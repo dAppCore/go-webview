@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	core "dappco.re/go"
+	core "github.com/dappcore/go"
 )
 
 // TestConsoleMessage_Good verifies the ConsoleMessage struct has expected fields.

@@ -1,9 +1,9 @@
-module dappco.re/go/webview
+module github.com/dappcore/go-webview/go
 
 go 1.26.0
 
 require github.com/gorilla/websocket v1.5.3 // Note: gorilla/websocket — WebSocket client for Chrome DevTools Protocol transport; no core.* equivalent at webview layer.
 
-require dappco.re/go/log v0.13.1
+require github.com/dappcore/go-log/go v0.14.0
 
-require dappco.re/go v0.12.0
+require github.com/dappcore/go v0.14.0

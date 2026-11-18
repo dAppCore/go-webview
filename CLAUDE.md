@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-Module: `dappco.re/go/core/webview` — Chrome DevTools Protocol client for browser automation.
+Module: `github.com/dappcore/go-webview/go` — Chrome DevTools Protocol client for browser automation.
 
 ## Commands
 

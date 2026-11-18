@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	core "dappco.re/go"
+	core "github.com/dappcore/go"
 )
 
 func newAngularTestHarness(t *testing.T, onMessage func(*fakeCDPTarget, cdpMessage)) (*AngularHelper, *fakeCDPTarget, *CDPClient) {

@@ -5,8 +5,8 @@ import (
 	"context"
 	"time"
 
-	core "dappco.re/go"
-	coreerr "dappco.re/go/log"
+	core "github.com/dappcore/go"
+	coreerr "github.com/dappcore/go-log/go"
 )
 
 // Action represents a browser action that can be performed.

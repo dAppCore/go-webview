@@ -5,7 +5,7 @@ description: Extracted exported API contract for go-webview with signatures and 
 
 # API Contract
 
-This inventory covers the current exported surface of `dappco.re/go/core/webview`.
+This inventory covers the current exported surface of `github.com/dappcore/go-webview/go`.
 
 Coverage notes:
 - Coverage is based on `webview_test.go`.

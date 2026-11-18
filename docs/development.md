@@ -9,7 +9,7 @@ description: How to build, test, and contribute to go-webview -- prerequisites, 
 
 ### Go
 
-Go 1.26 or later is required. The module path is `dappco.re/go/core/webview`.
+Go 1.26 or later is required. The module path is `github.com/dappcore/go-webview/go`.
 
 ### Chrome or Chromium
 

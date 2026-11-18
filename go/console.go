@@ -9,8 +9,8 @@ import (
 	"sync/atomic" // Note: AX-6 — internal concurrency primitive; structural per RFC §3/§6
 	"time"
 
-	core "dappco.re/go"
-	coreerr "dappco.re/go/log"
+	core "github.com/dappcore/go"
+	coreerr "github.com/dappcore/go-log/go"
 )
 
 // ConsoleWatcher provides advanced console message watching capabilities.

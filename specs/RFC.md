@@ -1,4 +1,4 @@
-# webview, **Import:** `dappco.re/go/core/webview`, **Files:** 5
+# webview, **Import:** `github.com/dappcore/go-webview/go`, **Files:** 5
 
 ## Types
 
